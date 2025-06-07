@@ -1,0 +1,33 @@
+{
+  "name": "dynamic-buffer",
+  "version": "0.0.1",
+  "description": "A list of Buffer - fast for reading/writing across multiple binary chunks",
+  "homepage": "https://github.com/platformatic/dynamic-buffer#readme",
+  "author": "Matteo Collina <hello@matteocollina.com>",
+  "main": "lib/dynamic-buffer.js",
+  "type": "commonjs",
+  "scripts": {
+    "lint:fix": "eslint --cache --fix",
+    "test": "eslint --cache && node --test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/platformatic/dynamic-buffer.git"
+  },
+  "keywords": [
+    "buffer",
+    "list",
+    "bl",
+    "fast",
+    "binary",
+    "chunk"
+  ],
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/platformatic/dynamic-buffer/issues"
+  },
+  "devDependencies": {
+    "eslint": "^9.28.0",
+    "neostandard": "^0.12.1"
+  }
+}
