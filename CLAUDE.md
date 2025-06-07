@@ -27,6 +27,7 @@ The `DynamicBuffer` class maintains an internal array of Buffer objects and prov
 - **Fix linting**: `npm run lint:fix`
 - **Lint only**: `eslint --cache`
 - **Single test file**: `node --test test/dynamic-buffer.test.js`
+- **Run benchmarks**: `npm run benchmark` (compares performance with bl library)
 
 ## Testing
 
