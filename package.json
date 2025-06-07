@@ -9,7 +9,8 @@
   "scripts": {
     "build:types": "tsc -p tsconfig.types.json",
     "lint:fix": "eslint --cache --fix",
-    "test": "eslint --cache && node --test"
+    "test": "eslint --cache && node --test",
+    "benchmark": "node benchmark.js"
   },
   "repository": {
     "type": "git",
@@ -29,8 +30,10 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
-    "eslint": "^9.28.0",
     "neostandard": "^0.12.1",
+    "bl": "^6.1.0",
+    "eslint": "^9.28.0",
+    "mitata": "^1.0.34",
     "typescript": "^5.8.3"
   }
 }
