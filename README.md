@@ -1,11 +1,11 @@
-# dynamic-buffer
+# dynbuffer
 
 A fast, efficient list of Buffer objects optimized for reading and writing across multiple binary chunks without unnecessary copying.
 
 ## Installation
 
 ```bash
-npm install dynamic-buffer
+npm install dynbuffer
 ```
 
 ## Features
@@ -19,7 +19,7 @@ npm install dynamic-buffer
 ## Quick Start
 
 ```javascript
-const { DynamicBuffer } = require('dynamic-buffer')
+const { DynamicBuffer } = require('dynbuffer')
 
 // Create from existing buffers
 const db = new DynamicBuffer([
@@ -237,7 +237,7 @@ db.writeVarInt64(value, append) // ZigZag encoded
 ### Building a Protocol Message
 
 ```javascript
-const { DynamicBuffer } = require('dynamic-buffer')
+const { DynamicBuffer } = require('dynbuffer')
 
 const message = new DynamicBuffer()
 
