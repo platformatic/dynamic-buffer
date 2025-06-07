@@ -1,6 +1,6 @@
 {
   "name": "dynamic-buffer",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "A list of Buffer - fast for reading/writing across multiple binary chunks",
   "homepage": "https://github.com/platformatic/dynamic-buffer#readme",
   "author": "Matteo Collina <hello@matteocollina.com>",
