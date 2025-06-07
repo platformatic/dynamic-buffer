@@ -29,6 +29,7 @@
     "url": "https://github.com/platformatic/dynamic-buffer/issues"
   },
   "devDependencies": {
+    "@types/node": "^22.15.30",
     "eslint": "^9.28.0",
     "neostandard": "^0.12.1",
     "typescript": "^5.8.3"
