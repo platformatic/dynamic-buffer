@@ -1,11 +1,11 @@
 {
-    "compilerOptions": {
-        "declaration": true,
-        "emitDeclarationOnly": true,
-        "outFile": "./dynamic-buffer.d.ts",
-        "allowJs": true,
-    },
-    "include": [
-        "./lib/dynamic-buffer.js"
-    ],
+  "compilerOptions": {
+    "target": "ES2020",
+    "allowJs": true,
+    "checkJs": true,
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "noEmit": true
+  }
 }

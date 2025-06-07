@@ -5,10 +5,9 @@
   "homepage": "https://github.com/platformatic/dynamic-buffer#readme",
   "author": "Matteo Collina <hello@matteocollina.com>",
   "main": "lib/dynamic-buffer.js",
-  "types": "dynamic-buffer.d.ts",
   "type": "commonjs",
   "scripts": {
-    "build:types": "tsc -p tsconfig.json",
+    "build:types": "tsc -p tsconfig.types.json",
     "lint:fix": "eslint --cache --fix",
     "test": "eslint --cache && node --test"
   },

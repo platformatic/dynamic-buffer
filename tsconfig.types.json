@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "outFile": "./dynamic-buffer.d.ts",
+    "noEmit": false
+  },
+  "include": [
+    "./lib/dynamic-buffer.js"
+  ]
+}
