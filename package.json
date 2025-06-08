@@ -7,6 +7,7 @@
   "main": "lib/dynamic-buffer.js",
   "type": "commonjs",
   "scripts": {
+    "build:types": "tsc -p tsconfig.types.json",
     "lint:fix": "eslint --cache --fix",
     "test": "eslint --cache && node --test",
     "benchmark": "node benchmark.js"
@@ -28,9 +29,11 @@
     "url": "https://github.com/platformatic/dynamic-buffer/issues"
   },
   "devDependencies": {
+    "@types/node": "^22.15.30",
+    "neostandard": "^0.12.1",
     "bl": "^6.1.0",
     "eslint": "^9.28.0",
     "mitata": "^1.0.34",
-    "neostandard": "^0.12.1"
+    "typescript": "^5.8.3"
   }
 }

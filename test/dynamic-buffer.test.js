@@ -2,12 +2,17 @@
 
 const { deepStrictEqual, notStrictEqual, ok, strictEqual, throws } = require('node:assert')
 const { test } = require('node:test')
-const { DynamicBuffer } = require('..')
+const { DynamicBuffer } = require('../lib/dynamic-buffer.js')
 const { EMPTY_BUFFER } = require('../lib/definitions.js')
 
 test('static isDynamicBuffer', () => {
   ok(DynamicBuffer.isDynamicBuffer(new DynamicBuffer()))
   ok(!DynamicBuffer.isDynamicBuffer('STRING'))
+})
+
+test('instanceof DynamicBuffer', () => {
+  ok((new DynamicBuffer() instanceof DynamicBuffer))
+  ok(!(new Date() instanceof DynamicBuffer))
 })
 
 test('constructor', () => {
@@ -629,6 +634,9 @@ test('readInt8', () => {
   )
 })
 
+/**
+ * @type {Array<[string, number]>}
+ */
 const fixedLengths = [
   ['UInt16', 2],
   ['Int16', 2],
@@ -1164,8 +1172,11 @@ test('writeInt8', () => {
   strictEqual(dynamicBuffer2.readInt8(1), 42) // 42 should be second
 })
 
-// Test for fixed width numeric methods
-// Parameters for test cases: [method name, value, expected size]
+/**
+ * Test for fixed width numeric methods
+ * Parameters for test cases: [method name, value, expected size]
+ * @type {Array<[string, number | bigint, number]>}
+ */
 const writeFixedMethodTests = [
   ['writeUInt16BE', 0xabcd, 2],
   ['writeUInt16LE', 0xabcd, 2],
@@ -1217,7 +1228,10 @@ for (const [methodName, value, expectedSize] of writeFixedMethodTests) {
   })
 }
 
-// Test for floating point methods
+/**
+ * Test for floating point methods
+ * @type {Array<[string, number, number]>}
+ */
 const writeFloatMethodTests = [
   ['writeFloatBE', 123.456, 4],
   ['writeFloatLE', 123.456, 4],

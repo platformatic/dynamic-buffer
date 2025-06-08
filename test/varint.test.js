@@ -1,6 +1,6 @@
 'use strict'
 const { strictEqual } = require('node:assert')
-const test = require('node:test')
+const { test } = require('node:test')
 const {
   int64ZigZagDecode,
   int64ZigZagEncode,
