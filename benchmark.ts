@@ -1,12 +1,9 @@
-'use strict'
+import { run, bench, group } from 'mitata'
+import BufferList from 'bl'
+import { DynamicBuffer } from './src/index.ts'
 
-const { run, bench, group } = require('mitata')
-const { DynamicBuffer } = require('./lib/dynamic-buffer')
-const BufferList = require('bl')
-
-// Helper function to create test buffers
-function createTestBuffers(count, size) {
-  const buffers = []
+function createTestBuffers (count: number, size: number): Buffer[] {
+  const buffers: Buffer[] = []
   for (let i = 0; i < count; i++) {
     const buf = Buffer.allocUnsafe(size)
     buf.fill(i % 256)
@@ -15,10 +12,9 @@ function createTestBuffers(count, size) {
   return buffers
 }
 
-// Create test data sets
-const smallBuffers = createTestBuffers(10, 100) // 10 buffers of 100 bytes each
-const mediumBuffers = createTestBuffers(50, 200) // 50 buffers of 200 bytes each
-const largeBuffers = createTestBuffers(100, 1000) // 100 buffers of 1000 bytes each
+const smallBuffers = createTestBuffers(10, 100)
+const mediumBuffers = createTestBuffers(50, 200)
+const largeBuffers = createTestBuffers(100, 1000)
 
 group('Construction', () => {
   bench('DynamicBuffer - small buffers', () => {
@@ -139,7 +135,7 @@ group('Buffer Access', () => {
 
 group('Consume Operations', () => {
   bench('DynamicBuffer - consume', () => {
-    const db = new DynamicBuffer(smallBuffers.map(b => b.slice()))
+    const db = new DynamicBuffer(smallBuffers.map((b) => b.slice()))
     for (let i = 0; i < 5; i++) {
       db.consume(10)
     }
@@ -147,7 +143,7 @@ group('Consume Operations', () => {
   })
 
   bench('BufferList - consume', () => {
-    const bl = new BufferList(smallBuffers.map(b => b.slice()))
+    const bl = new BufferList(smallBuffers.map((b) => b.slice()))
     for (let i = 0; i < 5; i++) {
       bl.consume(10)
     }
@@ -157,16 +153,14 @@ group('Consume Operations', () => {
 
 group('Variable Integer Operations', () => {
   const testValues = [1, 127, 128, 16383, 16384, 2097151, 2097152]
-  
+
   bench('DynamicBuffer - write/read varints', () => {
     const db = new DynamicBuffer()
-    
-    // Write
+
     for (const value of testValues) {
       db.writeUnsignedVarInt(value)
     }
-    
-    // Read
+
     let offset = 0
     let sum = 0
     for (let i = 0; i < testValues.length; i++) {
@@ -174,17 +168,15 @@ group('Variable Integer Operations', () => {
       sum += value
       offset += bytesRead
     }
-    
+
     return sum
   })
-
-  // Note: BufferList doesn't have native varint support, so we skip this comparison
 })
 
 group('Memory Usage Simulation', () => {
-  const chunks = []
+  const chunks: Buffer[] = []
   for (let i = 0; i < 1000; i++) {
-    chunks.push(Buffer.allocUnsafe(Math.random() * 100 + 50))
+    chunks.push(Buffer.allocUnsafe(Math.floor(Math.random() * 100 + 50)))
   }
 
   bench('DynamicBuffer - incremental build', () => {

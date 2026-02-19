@@ -1,3 +1,20 @@
-'use strict'
+import eslintPluginPrettier from 'eslint-plugin-prettier'
+import { globalIgnores } from 'eslint/config'
+import neostandard from 'neostandard'
 
-module.exports = require('neostandard')({})
+const eslint = [
+  ...neostandard({ ts: true }),
+  globalIgnores(['dist/', 'external/']),
+  {
+    files: ['**/*.ts'],
+    rules: {
+      '@typescript-eslint/consistent-type-imports': ['error', { fixStyle: 'inline-type-imports' }],
+      'prettier/prettier': 'error'
+    },
+    plugins: {
+      prettier: eslintPluginPrettier
+    }
+  }
+]
+
+export default eslint

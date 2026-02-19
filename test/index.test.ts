@@ -1,13 +1,33 @@
-'use strict'
-
-const { deepStrictEqual, notStrictEqual, ok, strictEqual, throws } = require('node:assert')
-const { test } = require('node:test')
-const { DynamicBuffer } = require('..')
-const { EMPTY_BUFFER } = require('../lib/definitions.js')
+import { deepStrictEqual, notStrictEqual, strictEqual, throws } from 'node:assert'
+import test from 'node:test'
+import { EMPTY_BUFFER } from '../src/definitions.ts'
+import { DynamicBuffer, OutOfBoundsError } from '../src/index.ts'
 
 test('static isDynamicBuffer', () => {
-  ok(DynamicBuffer.isDynamicBuffer(new DynamicBuffer()))
-  ok(!DynamicBuffer.isDynamicBuffer('STRING'))
+  // Test with a DynamicBuffer instance
+  const dynamicBuffer = new DynamicBuffer()
+  strictEqual(DynamicBuffer.isDynamicBuffer(dynamicBuffer), true)
+
+  // Test with a regular Buffer
+  const regularBuffer = Buffer.from([1, 2, 3])
+  strictEqual(DynamicBuffer.isDynamicBuffer(regularBuffer), false)
+
+  // Test with null
+  strictEqual(DynamicBuffer.isDynamicBuffer(null), false)
+
+  // Test with undefined
+  strictEqual(DynamicBuffer.isDynamicBuffer(undefined), false)
+
+  // Test with other types
+  strictEqual(DynamicBuffer.isDynamicBuffer({}), false)
+  strictEqual(DynamicBuffer.isDynamicBuffer([]), false)
+  strictEqual(DynamicBuffer.isDynamicBuffer('string'), false)
+  strictEqual(DynamicBuffer.isDynamicBuffer(123), false)
+
+  // The dynamicBuffer symbol is a private implementation detail and can't be faked from outside
+  // as it's not exported or accessible (it's not Symbol.for() but a local Symbol)
+  const fakeBuffer = {}
+  strictEqual(DynamicBuffer.isDynamicBuffer(fakeBuffer), false)
 })
 
 test('constructor', () => {
@@ -119,7 +139,7 @@ test('subarray', () => {
       emptyBuffer.subarray(0, 1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -191,7 +211,7 @@ test('subarray', () => {
       multiBuffer.subarray(-1, 5)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -200,7 +220,7 @@ test('subarray', () => {
       multiBuffer.subarray(0, 7)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -215,7 +235,7 @@ test('slice', () => {
       emptyBuffer.slice(0, 1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -285,7 +305,7 @@ test('slice', () => {
       singleBuffer.slice(-1, 5)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -294,7 +314,7 @@ test('slice', () => {
       singleBuffer.slice(0, 7)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -434,7 +454,7 @@ test('consume', () => {
         buffer.consume(-1)
       },
       err => {
-        return err instanceof Error && err.message === 'Out of bounds.'
+        return err instanceof OutOfBoundsError
       }
     )
 
@@ -444,7 +464,7 @@ test('consume', () => {
         buffer.consume(buffer.length + 1)
       },
       err => {
-        return err instanceof Error && err.message === 'Out of bounds.'
+        return err instanceof OutOfBoundsError
       }
     )
   }
@@ -538,7 +558,7 @@ test('get', () => {
       emptyBuffer.get(0)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -563,7 +583,7 @@ test('get', () => {
       multiBuffer.get(-1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -572,7 +592,7 @@ test('get', () => {
       multiBuffer.get(5)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -588,7 +608,7 @@ test('readUInt8', () => {
       buffer.readUInt8(-1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -597,7 +617,7 @@ test('readUInt8', () => {
       buffer.readUInt8(3)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -615,7 +635,7 @@ test('readInt8', () => {
       buffer.readInt8(-1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -624,12 +644,14 @@ test('readInt8', () => {
       buffer.readInt8(3)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
 
-const fixedLengths = [
+type Reader<T = number> = (offset?: number) => T
+type Writer<T = number> = (value: T, offset?: number) => void
+const fixedLengths: [string, number][] = [
   ['UInt16', 2],
   ['Int16', 2],
   ['UInt32', 4],
@@ -650,13 +672,13 @@ for (const [name, bytes] of fixedLengths) {
       const split = 2 ** (bytes * (8 - 1)) + 7
 
       if (name.includes('Big')) {
-        const writer = totalBuffer[`write${spec}`]
+        const writer = totalBuffer[`write${spec}` as keyof Buffer] as Writer<bigint>
         writer.call(totalBuffer, 1n, 0)
         writer.call(totalBuffer, 2n, bytes)
         writer.call(totalBuffer, BigInt(split), bytes * 2)
         writer.call(totalBuffer, 3n, bytes * 3)
       } else {
-        const writer = totalBuffer[`write${spec}`]
+        const writer = totalBuffer[`write${spec}` as keyof Buffer] as Writer
 
         writer.call(totalBuffer, 1, 0)
         writer.call(totalBuffer, 2, bytes)
@@ -670,7 +692,7 @@ for (const [name, bytes] of fixedLengths) {
         totalBuffer.subarray(bytes * 2 + bytes / 2)
       ])
 
-      const reader = DynamicBuffer.prototype[`read${spec}`]
+      const reader = DynamicBuffer.prototype[`read${spec}` as keyof DynamicBuffer] as Reader
 
       if (name.includes('Big')) {
         strictEqual(reader.call(buffer), 1n)
@@ -689,7 +711,7 @@ for (const [name, bytes] of fixedLengths) {
           reader.call(buffer, -1)
         },
         err => {
-          return err instanceof Error && err.message === 'Out of bounds.'
+          return err instanceof OutOfBoundsError
         }
       )
 
@@ -698,7 +720,7 @@ for (const [name, bytes] of fixedLengths) {
           reader.call(buffer, bytes * 4)
         },
         err => {
-          return err instanceof Error && err.message === 'Out of bounds.'
+          return err instanceof OutOfBoundsError
         }
       )
     })
@@ -742,7 +764,7 @@ test('readFloatBE', () => {
       singleBuffer.readFloatBE(-1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -751,7 +773,7 @@ test('readFloatBE', () => {
       singleBuffer.readFloatBE(1) // Not enough bytes for a float
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -793,7 +815,7 @@ test('readFloatLE', () => {
       singleBuffer.readFloatLE(-1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -802,7 +824,7 @@ test('readFloatLE', () => {
       singleBuffer.readFloatLE(1) // Not enough bytes for a float
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -845,7 +867,7 @@ test('readDoubleBE', () => {
       singleBuffer.readDoubleBE(-1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -854,7 +876,7 @@ test('readDoubleBE', () => {
       singleBuffer.readDoubleBE(1) // Not enough bytes for a double
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -897,7 +919,7 @@ test('readDoubleLE', () => {
       singleBuffer.readDoubleLE(-1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 
@@ -906,7 +928,7 @@ test('readDoubleLE', () => {
       singleBuffer.readDoubleLE(1) // Not enough bytes for a double
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -955,7 +977,7 @@ test('readUnsignedVarInt', () => {
       smallBuffer.readUnsignedVarInt(1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -1014,7 +1036,7 @@ test('readUnsignedVarInt64', () => {
       smallBuffer.readUnsignedVarInt64(1)
     },
     err => {
-      return err instanceof Error && err.message === 'Out of bounds.'
+      return err instanceof OutOfBoundsError
     }
   )
 })
@@ -1166,7 +1188,7 @@ test('writeInt8', () => {
 
 // Test for fixed width numeric methods
 // Parameters for test cases: [method name, value, expected size]
-const writeFixedMethodTests = [
+const writeFixedMethodTests: [string, number | bigint, number][] = [
   ['writeUInt16BE', 0xabcd, 2],
   ['writeUInt16LE', 0xabcd, 2],
   ['writeInt16BE', -12345, 2],
@@ -1184,11 +1206,14 @@ const writeFixedMethodTests = [
 for (const [methodName, value, expectedSize] of writeFixedMethodTests) {
   test(methodName, () => {
     // Get writer method
-    const writer = DynamicBuffer.prototype[methodName]
+    const writer = DynamicBuffer.prototype[methodName as keyof DynamicBuffer] as (
+      value: any,
+      append?: boolean
+    ) => DynamicBuffer
 
     // Get corresponding reader method - remove 'write' and add 'read'
     const readerMethodName = 'read' + methodName.substring(5)
-    const reader = DynamicBuffer.prototype[readerMethodName]
+    const reader = DynamicBuffer.prototype[readerMethodName as keyof DynamicBuffer] as (offset?: number) => any
 
     // Test with append = true (default)
     const dynamicBuffer1 = new DynamicBuffer()
@@ -1218,7 +1243,7 @@ for (const [methodName, value, expectedSize] of writeFixedMethodTests) {
 }
 
 // Test for floating point methods
-const writeFloatMethodTests = [
+const writeFloatMethodTests: [string, number, number][] = [
   ['writeFloatBE', 123.456, 4],
   ['writeFloatLE', 123.456, 4],
   ['writeDoubleBE', 12345.6789, 8],
@@ -1228,11 +1253,14 @@ const writeFloatMethodTests = [
 for (const [methodName, value, expectedSize] of writeFloatMethodTests) {
   test(methodName, () => {
     // Get writer method
-    const writer = DynamicBuffer.prototype[methodName]
+    const writer = DynamicBuffer.prototype[methodName as keyof DynamicBuffer] as (
+      value: number,
+      append?: boolean
+    ) => DynamicBuffer
 
     // Get corresponding reader method - remove 'write' and add 'read'
     const readerMethodName = 'read' + methodName.substring(5)
-    const reader = DynamicBuffer.prototype[readerMethodName]
+    const reader = DynamicBuffer.prototype[readerMethodName as keyof DynamicBuffer] as (offset?: number) => number
 
     // Test with append = true (default)
     const dynamicBuffer1 = new DynamicBuffer()
@@ -1378,31 +1406,4 @@ test('writeVarInt64', () => {
   const buffer5Length = dynamicBuffer5.length
   dynamicBuffer5.writeVarInt64(-42n, false) // Prepend -42
   strictEqual(dynamicBuffer5.length > buffer5Length, true) // Length should have increased
-})
-
-test('isDynamicBuffer - static method', () => {
-  // Test with a DynamicBuffer instance
-  const dynamicBuffer = new DynamicBuffer()
-  strictEqual(DynamicBuffer.isDynamicBuffer(dynamicBuffer), true)
-
-  // Test with a regular Buffer
-  const regularBuffer = Buffer.from([1, 2, 3])
-  strictEqual(DynamicBuffer.isDynamicBuffer(regularBuffer), false)
-
-  // Test with null
-  strictEqual(DynamicBuffer.isDynamicBuffer(null), false)
-
-  // Test with undefined
-  strictEqual(DynamicBuffer.isDynamicBuffer(undefined), false)
-
-  // Test with other types
-  strictEqual(DynamicBuffer.isDynamicBuffer({}), false)
-  strictEqual(DynamicBuffer.isDynamicBuffer([]), false)
-  strictEqual(DynamicBuffer.isDynamicBuffer('string'), false)
-  strictEqual(DynamicBuffer.isDynamicBuffer(123), false)
-
-  // The dynamicBuffer symbol is a private implementation detail and can't be faked from outside
-  // as it's not exported or accessible (it's not Symbol.for() but a local Symbol)
-  const fakeBuffer = {}
-  strictEqual(DynamicBuffer.isDynamicBuffer(fakeBuffer), false)
 })

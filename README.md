@@ -1,318 +1,255 @@
-# dynbuffer
+# @platformatic/dynamic-buffer
 
-A fast, efficient list of Buffer objects optimized for reading and writing across multiple binary chunks without unnecessary copying.
+A fast, efficient list of `Buffer` objects optimized for reading and writing across multiple binary chunks without unnecessary copying.
+
+`DynamicBuffer` lets you append/prepend chunks, read values across chunk boundaries, and encode/decode varints without manually concatenating buffers every time.
 
 ## Installation
 
 ```bash
-npm install dynbuffer
+npm i @platformatic/dynamic-buffer
 ```
 
 ## Features
 
-- **Zero-copy operations**: Read and write across buffer boundaries without copying data
-- **Buffer-compatible API**: Familiar methods that mirror Node.js Buffer API
-- **Variable-length integers**: Built-in support for varint encoding with ZigZag for signed values
-- **Memory efficient**: Only concatenates buffers when explicitly requested
-- **TypeScript ready**: Written in JavaScript with clear type patterns
+- **Zero-copy operations**: read and write across buffer boundaries without eagerly concatenating
+- **Buffer-compatible API**: familiar methods mirroring Node.js `Buffer`
+- **Variable-length integers**: built-in unsigned varint and zig-zag varint support
+- **Memory efficient**: internal chunks are only concatenated when explicitly requested
+- **TypeScript ready**: exports type definitions
 
-## Quick Start
+## Quick start
 
-```javascript
-const { DynamicBuffer } = require('dynbuffer')
+```ts
+import { DynamicBuffer } from '@platformatic/dynamic-buffer'
 
-// Create from existing buffers
-const db = new DynamicBuffer([
-  Buffer.from([1, 2]),
-  Buffer.from([3, 4, 5])
-])
+const db = new DynamicBuffer([Buffer.from([1, 2]), Buffer.from([3, 4, 5])])
 
-// Read across buffer boundaries seamlessly
-console.log(db.readUInt16BE(1)) // Reads bytes 1-2: [2, 3]
+// Read across boundaries
+console.log(db.readUInt16BE(1)) // bytes [2, 3]
 
-// Append more data
+// Append data
 db.append(Buffer.from([6, 7, 8]))
 
-// Access the full buffer when needed
+// Contiguous buffer view (concatenates on access)
 console.log(db.buffer) // <Buffer 01 02 03 04 05 06 07 08>
 ```
 
-## API Reference
+## API reference
+
+### Exports
+
+- `DynamicBuffer`
+- `OutOfBoundsError`
 
 ### Constructor
 
 #### `new DynamicBuffer([buffers])`
 
-Creates a new DynamicBuffer instance.
+Creates a new `DynamicBuffer` instance.
 
-- `buffers` (Buffer | Buffer[]): Optional initial buffer(s)
+- `buffers` (`Buffer | Buffer[]`): optional initial buffer(s)
 
-```javascript
-const db1 = new DynamicBuffer() // Empty
-const db2 = new DynamicBuffer(Buffer.from([1, 2, 3])) // Single buffer
-const db3 = new DynamicBuffer([buf1, buf2, buf3]) // Multiple buffers
+```ts
+const db1 = new DynamicBuffer()
+const db2 = new DynamicBuffer(Buffer.from([1, 2, 3]))
+const db3 = new DynamicBuffer([Buffer.from([1]), Buffer.from([2, 3])])
 ```
 
 ### Properties
 
 #### `length`
-Returns the total length of all buffers combined.
+
+Total length (in bytes) across all internal buffers.
 
 #### `buffer`
-Returns a concatenated Buffer of all internal buffers. Only performs concatenation when accessed.
+
+Returns a contiguous `Buffer` of all internal chunks.
+
+- Returns the original chunk when there is only one buffer
+- Concatenates only when there are multiple chunks
 
 #### `buffers`
-Direct access to the internal buffer array (use with caution).
 
-### Static Methods
+Direct access to internal chunks (`Buffer[]`). Use with caution.
+
+### Static methods
 
 #### `DynamicBuffer.isDynamicBuffer(obj)`
-Checks if an object is a DynamicBuffer instance.
 
-```javascript
+Checks whether a value is a `DynamicBuffer` instance.
+
+```ts
 DynamicBuffer.isDynamicBuffer(new DynamicBuffer()) // true
 DynamicBuffer.isDynamicBuffer(Buffer.from([1, 2])) // false
 ```
 
-### Buffer Management
+### Buffer management
 
 #### `append(buffer)`
-Appends a buffer to the end. Returns `this` for chaining.
 
-```javascript
-db.append(Buffer.from([1, 2, 3]))
-```
+Appends a chunk. Returns `this`.
 
 #### `prepend(buffer)`
-Prepends a buffer to the beginning. Returns `this` for chaining.
 
-```javascript
-db.prepend(Buffer.from([1, 2, 3]))
-```
+Prepends a chunk. Returns `this`.
 
 #### `appendFrom(dynamicBuffer)`
-Appends all buffers from another DynamicBuffer. Returns `this` for chaining.
 
-```javascript
-const other = new DynamicBuffer([buf1, buf2])
-db.appendFrom(other)
-```
+Appends chunks from another `DynamicBuffer`. Returns `this`.
 
 #### `prependFrom(dynamicBuffer)`
-Prepends all buffers from another DynamicBuffer. Returns `this` for chaining.
 
-```javascript
-db.prependFrom(other)
-```
+Prepends chunks from another `DynamicBuffer`. Returns `this`.
 
-### Data Access
+### Data access
 
 #### `get(offset)`
-Returns the byte at the specified offset.
 
-```javascript
-const byte = db.get(5) // Returns byte at position 5
-```
+Returns the byte at `offset`.
 
 #### `slice(start, end)`
-Returns a new Buffer containing the specified slice.
 
-```javascript
-const slice = db.slice(2, 8) // Buffer from positions 2-7
-```
+Returns a `Buffer` for the selected range.
 
 #### `subarray(start, end)`
-Returns a new DynamicBuffer containing the specified range.
 
-```javascript
-const sub = db.subarray(2, 8) // DynamicBuffer from positions 2-7
-```
+Returns a new `DynamicBuffer` for the selected range.
 
 #### `toString(encoding, start, end)`
-Converts to string using the specified encoding.
 
-```javascript
-const str = db.toString('utf8', 0, 10)
-```
+Converts a selected range to string.
 
-### Buffer Operations
+### Buffer operations
 
 #### `clone(deep = false)`
-Creates a copy of the DynamicBuffer.
 
-- `deep` (boolean): If true, creates copies of internal buffers
+Creates a copy of the `DynamicBuffer`.
 
-```javascript
-const shallow = db.clone()
-const deep = db.clone(true)
-```
+- `deep = false`: copies the chunk list only (shared chunk references)
+- `deep = true`: clones each chunk via `Buffer.slice()`
 
 #### `consume(offset)`
-Removes bytes from the beginning up to the specified offset. Returns `this` for chaining.
 
-```javascript
-db.consume(4) // Remove first 4 bytes
-```
+Consumes bytes from the front up to `offset`. Returns `this`.
 
-### Reading Methods
+### Reading methods
 
-All read methods support an optional `offset` parameter (defaults to 0).
+All read methods support an optional `offset` (default `0`, except varints where offset is required).
 
-#### Integer Reading
-```javascript
-db.readUInt8(offset)
-db.readInt8(offset)
-db.readUInt16BE(offset)
-db.readUInt16LE(offset)
-db.readInt16BE(offset)
-db.readInt16LE(offset)
-db.readUInt32BE(offset)
-db.readUInt32LE(offset)
-db.readInt32BE(offset)
-db.readInt32LE(offset)
-db.readBigUInt64BE(offset)
-db.readBigUInt64LE(offset)
-db.readBigInt64BE(offset)
-db.readBigInt64LE(offset)
-```
+#### Integer reading
 
-#### Floating Point Reading
-```javascript
-db.readFloatBE(offset)
-db.readFloatLE(offset)
-db.readDoubleBE(offset)
-db.readDoubleLE(offset)
-```
+- `readUInt8`, `readUInt16BE`, `readUInt16LE`, `readUInt32BE`, `readUInt32LE`
+- `readInt8`, `readInt16BE`, `readInt16LE`, `readInt32BE`, `readInt32LE`
+- `readBigUInt64BE`, `readBigUInt64LE`
+- `readBigInt64BE`, `readBigInt64LE`
 
-#### Variable-Length Integer Reading
-Returns `[value, bytesRead]` tuple.
+#### Floating-point reading
 
-```javascript
-const [value, bytesRead] = db.readUnsignedVarInt(offset)
-const [value, bytesRead] = db.readUnsignedVarInt64(offset)
-const [value, bytesRead] = db.readVarInt(offset) // ZigZag decoded
-const [value, bytesRead] = db.readVarInt64(offset) // ZigZag decoded
-```
+- `readFloatBE`, `readFloatLE`
+- `readDoubleBE`, `readDoubleLE`
 
-### Writing Methods
+#### Variable-length integer reading
 
-All write methods support an optional `append` parameter (defaults to true). When `append` is false, data is prepended.
+Returns a tuple: `[value, bytesRead]`
 
-#### Integer Writing
-```javascript
-db.writeUInt8(value, append)
-db.writeInt8(value, append)
-db.writeUInt16BE(value, append)
-db.writeUInt16LE(value, append)
-db.writeInt16BE(value, append)
-db.writeInt16LE(value, append)
-db.writeUInt32BE(value, append)
-db.writeUInt32LE(value, append)
-db.writeInt32BE(value, append)
-db.writeInt32LE(value, append)
-db.writeBigUInt64BE(value, append)
-db.writeBigUInt64LE(value, append)
-db.writeBigInt64BE(value, append)
-db.writeBigInt64LE(value, append)
-```
+- `readUnsignedVarInt(offset): [number, number]`
+- `readUnsignedVarInt64(offset): [bigint, number]`
+- `readVarInt(offset): [number, number]` (zig-zag decoded)
+- `readVarInt64(offset): [bigint, number]` (zig-zag decoded)
 
-#### Floating Point Writing
-```javascript
-db.writeFloatBE(value, append)
-db.writeFloatLE(value, append)
-db.writeDoubleBE(value, append)
-db.writeDoubleLE(value, append)
-```
+### Writing methods
 
-#### Variable-Length Integer Writing
-```javascript
-db.writeUnsignedVarInt(value, append)
-db.writeUnsignedVarInt64(value, append)
-db.writeVarInt(value, append) // ZigZag encoded
-db.writeVarInt64(value, append) // ZigZag encoded
-```
+Most write methods accept `append = true` (when `false`, data is prepended) and return `this`.
+
+#### Integer writing
+
+- `writeUInt8`, `writeUInt16BE`, `writeUInt16LE`, `writeUInt32BE`, `writeUInt32LE`
+- `writeInt8`, `writeInt16BE`, `writeInt16LE`, `writeInt32BE`, `writeInt32LE`
+- `writeBigUInt64BE`, `writeBigUInt64LE`
+- `writeBigInt64BE`, `writeBigInt64LE`
+
+#### Floating-point writing
+
+- `writeFloatBE`, `writeFloatLE`
+- `writeDoubleBE`, `writeDoubleLE`
+
+#### Variable-length integer writing
+
+- `writeUnsignedVarInt(value, append)`
+- `writeUnsignedVarInt64(value, append)`
+- `writeVarInt(value, append)` (zig-zag encoded)
+- `writeVarInt64(value, append)` (zig-zag encoded)
+
+> Note: varint write methods append/prepend encoded bytes but do not return `this`.
 
 ## Examples
 
-### Building a Protocol Message
+### Building a protocol message
 
-```javascript
-const { DynamicBuffer } = require('dynbuffer')
+```ts
+import { DynamicBuffer } from '@platformatic/dynamic-buffer'
 
+const payload = Buffer.from('hello')
 const message = new DynamicBuffer()
 
-// Write header
-message.writeUInt32BE(0x12345678) // Magic number
-message.writeUInt16BE(1) // Version
-message.writeVarInt(payload.length) // Payload length
-
-// Append payload
+message.writeUInt32BE(0x12345678) // magic
+message.writeUInt16BE(1) // version
+message.writeVarInt(payload.length) // payload size
 message.append(payload)
 
-// Send the complete message
 socket.write(message.buffer)
 ```
 
-### Parsing Streaming Data
+### Parsing streaming data
 
-```javascript
+```ts
+import { DynamicBuffer } from '@platformatic/dynamic-buffer'
+
 const parser = new DynamicBuffer()
 
-socket.on('data', (chunk) => {
+socket.on('data', chunk => {
   parser.append(chunk)
-  
+
   while (parser.length >= 4) {
     const messageLength = parser.readUInt32BE(0)
-    
+
     if (parser.length >= 4 + messageLength) {
-      // Extract complete message
       const message = parser.slice(4, 4 + messageLength)
       processMessage(message)
-      
-      // Remove processed data
       parser.consume(4 + messageLength)
     } else {
-      break // Wait for more data
+      break
     }
   }
 })
 ```
 
-### Working with Variable-Length Integers
+### Working with varints
 
-```javascript
+```ts
+import { DynamicBuffer } from '@platformatic/dynamic-buffer'
+
 const db = new DynamicBuffer()
 
-// Write variable-length integers
-db.writeVarInt(42)      // Positive number
-db.writeVarInt(-42)     // Negative number (ZigZag encoded)
-db.writeVarInt64(123456789012345n) // Large number
+db.writeVarInt(42)
+db.writeVarInt(-42)
+db.writeVarInt64(123456789012345n)
 
-// Read them back
 let offset = 0
-const [val1, bytes1] = db.readVarInt(offset)
-offset += bytes1
+const [v1, b1] = db.readVarInt(offset)
+offset += b1
 
-const [val2, bytes2] = db.readVarInt(offset)
-offset += bytes2
+const [v2, b2] = db.readVarInt(offset)
+offset += b2
 
-const [val3, bytes3] = db.readVarInt64(offset)
+const [v3] = db.readVarInt64(offset)
 ```
 
-## Performance
+## Error handling
 
-DynamicBuffer is designed for scenarios where you need to:
-- Build up binary data incrementally without knowing the final size
-- Read structured data from multiple buffer chunks
-- Avoid expensive buffer concatenation operations
-- Work with streaming data where messages may span multiple chunks
-
-The library only allocates new memory when absolutely necessary (like calling `.buffer` or `.slice()`).
+Out-of-range access throws `OutOfBoundsError` with `code: 'OUT_OF_BOUNDS'`.
 
 ## License
 
-Apache-2.0
-
-## Contributing
-
-This project follows standard Node.js conventions. Run `npm test` to execute the test suite.
+Apache-2.0. See [LICENSE](LICENSE).
