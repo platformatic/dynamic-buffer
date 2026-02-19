@@ -2,16 +2,16 @@
   "name": "@platformatic/dynamic-buffer",
   "version": "0.2.0",
   "description": "A small utility class to work with logically contiguous binary data split across multiple Buffer chunks.",
-  "homepage": "https://github.com/platformatic/@platformatic/dynamic-buffer",
+  "homepage": "https://github.com/platformatic/dynamic-buffer",
   "author": "Platformatic Inc. <oss@platformatic.dev> (https://platformatic.dev)",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/platformatic/@platformatic/dynamic-buffer.git"
+    "url": "git+https://github.com/platformatic/dynamic-buffer.git"
   },
   "keywords": [],
   "bugs": {
-    "url": "https://github.com/platformatic/@platformatic/dynamic-buffer/issues"
+    "url": "https://github.com/platformatic/dynamic-buffer/issues"
   },
   "private": false,
   "files": [
