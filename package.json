@@ -1,6 +1,6 @@
 {
   "name": "@platformatic/dynamic-buffer",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A small utility class to work with logically contiguous binary data split across multiple Buffer chunks.",
   "homepage": "https://github.com/platformatic/dynamic-buffer",
   "author": "Platformatic Inc. <oss@platformatic.dev> (https://platformatic.dev)",
