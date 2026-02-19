@@ -135,7 +135,7 @@ group('Buffer Access', () => {
 
 group('Consume Operations', () => {
   bench('DynamicBuffer - consume', () => {
-    const db = new DynamicBuffer(smallBuffers.map((b) => b.slice()))
+    const db = new DynamicBuffer(smallBuffers.map(b => b.slice()))
     for (let i = 0; i < 5; i++) {
       db.consume(10)
     }
@@ -143,7 +143,7 @@ group('Consume Operations', () => {
   })
 
   bench('BufferList - consume', () => {
-    const bl = new BufferList(smallBuffers.map((b) => b.slice()))
+    const bl = new BufferList(smallBuffers.map(b => b.slice()))
     for (let i = 0; i < 5; i++) {
       bl.consume(10)
     }
