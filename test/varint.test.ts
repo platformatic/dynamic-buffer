@@ -1,14 +1,13 @@
-'use strict'
-const { strictEqual } = require('node:assert')
-const test = require('node:test')
-const {
+import { strictEqual } from 'node:assert'
+import test from 'node:test'
+import {
   int64ZigZagDecode,
   int64ZigZagEncode,
   intZigZagDecode,
   intZigZagEncode,
   sizeOfUnsignedVarInt,
   sizeOfUnsignedVarInt64
-} = require('../lib/varint.js')
+} from '../src/index.ts'
 
 test('zigzag encoding (32-bit)', () => {
   strictEqual(intZigZagEncode(0), 0)

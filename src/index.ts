@@ -1,7 +1,5 @@
-'use strict'
-
-const { EMPTY_BUFFER, INT16_SIZE, INT32_SIZE, INT64_SIZE, INT8_SIZE } = require('./definitions')
-const {
+import { EMPTY_BUFFER, INT16_SIZE, INT32_SIZE, INT64_SIZE, INT8_SIZE } from './definitions.ts'
+import {
   BITS_8PLUS_MASK,
   BITS_8PLUS_MASK_64,
   int64ZigZagDecode,
@@ -14,18 +12,33 @@ const {
   MOST_SIGNIFICANT_BIT_FLAG_64,
   sizeOfUnsignedVarInt,
   sizeOfUnsignedVarInt64
-} = require('./varint')
+} from './varint.ts'
 
 const instanceIdentifier = Symbol('plt.dynamicBuffer.instanceIdentifier')
 
-class DynamicBuffer {
-  #readBuffer // This is used from the fixed length readers
+export * from './definitions.ts'
+export * from './varint.ts'
 
-  static isDynamicBuffer (target) {
+export class OutOfBoundsError extends Error {
+  code: string
+
+  constructor (message: string) {
+    super(message)
+    this.code = 'OUT_OF_BOUNDS'
+  }
+}
+
+export class DynamicBuffer {
+  buffers: Buffer[]
+  length: number
+  #readBuffer: Buffer; // This is used from the fixed length readers
+  [instanceIdentifier]: boolean
+
+  static isDynamicBuffer (target: any): boolean {
     return target?.[instanceIdentifier] === true
   }
 
-  constructor (buffers) {
+  constructor (buffers?: Buffer | Buffer[]) {
     this.buffers = []
     this.length = 0
     this.#readBuffer = Buffer.allocUnsafe(8)
@@ -44,7 +57,7 @@ class DynamicBuffer {
     }
   }
 
-  get buffer () {
+  get buffer (): Buffer {
     if (this.buffers.length === 0) {
       return EMPTY_BUFFER
     }
@@ -55,41 +68,51 @@ class DynamicBuffer {
     return Buffer.concat(this.buffers, this.length)
   }
 
-  append (buffer) {
+  append (buffer: Buffer): this {
     this.buffers.push(buffer)
     this.length += buffer.length
 
     return this
   }
 
-  prepend (buffer) {
+  prepend (buffer: Buffer): this {
     this.buffers.unshift(buffer)
     this.length += buffer.length
 
     return this
   }
 
-  appendFrom (DynamicBuffer) {
-    this.buffers.push(...DynamicBuffer.buffers)
+  appendFrom (DynamicBuffer: DynamicBuffer): this {
+    const buffers = DynamicBuffer.buffers
+
+    for (let i = 0; i < buffers.length; i++) {
+      this.buffers.push(buffers[i])
+    }
+
     this.length += DynamicBuffer.length
 
     return this
   }
 
-  prependFrom (DynamicBuffer) {
-    this.buffers.unshift(...DynamicBuffer.buffers)
+  prependFrom (DynamicBuffer: DynamicBuffer): this {
+    const buffers = DynamicBuffer.buffers
+
+    for (let i = buffers.length - 1; i >= 0; i--) {
+      this.buffers.unshift(buffers[i])
+    }
+
     this.length += DynamicBuffer.length
 
     return this
   }
 
-  subarray (start = 0, end) {
+  subarray (start: number = 0, end?: number): DynamicBuffer {
     if (typeof end === 'undefined') {
       end = this.length
     }
 
     if (start < 0 || start > this.length || end > this.length) {
-      throw new Error('Out of bounds.')
+      throw new OutOfBoundsError('Out of bounds.')
     }
 
     if (this.buffers.length === 0) {
@@ -120,19 +143,19 @@ class DynamicBuffer {
     return new DynamicBuffer(buffers)
   }
 
-  slice (start = 0, end) {
+  slice (start: number = 0, end?: number): Buffer {
     if (typeof end === 'undefined') {
       end = this.length
     }
 
     if (start < 0 || start > this.length || end > this.length) {
-      throw new Error('Out of bounds.')
+      throw new OutOfBoundsError('Out of bounds.')
     }
 
     if (this.buffers.length === 0) {
       return EMPTY_BUFFER
     } else if (this.buffers.length === 1) {
-      return this.buffers[0].slice(start, end)
+      return this.buffers[0].subarray(start, end)
     }
 
     let position = 0
@@ -159,7 +182,7 @@ class DynamicBuffer {
     return buffer
   }
 
-  clone (deep = false) {
+  clone (deep: boolean = false): DynamicBuffer {
     if (!deep) {
       return new DynamicBuffer(this.buffers)
     }
@@ -172,9 +195,9 @@ class DynamicBuffer {
     return new DynamicBuffer(buffers)
   }
 
-  consume (offset) {
+  consume (offset: number): this {
     if (offset < 0 || offset > this.length) {
-      throw new Error('Out of bounds.')
+      throw new OutOfBoundsError('Out of bounds.')
     }
 
     if (offset === 0) {
@@ -202,22 +225,22 @@ class DynamicBuffer {
     return this
   }
 
-  toString (encoding = 'utf-8', start = 0, end) {
+  toString (encoding: BufferEncoding = 'utf-8', start: number = 0, end?: number): string {
     return this.slice(start, end).toString(encoding)
   }
 
-  get (offset) {
+  get (offset: number): number {
     if (offset < 0 || offset >= this.length) {
-      throw new Error('Out of bounds.')
+      throw new OutOfBoundsError('Out of bounds.')
     }
 
     const [finalIndex, current] = this.#findInitialBuffer(offset)
     return this.buffers[current][finalIndex]
   }
 
-  readUInt8 (offset = 0) {
+  readUInt8 (offset: number = 0): number {
     if (offset < 0 || offset >= this.length) {
-      throw new Error('Out of bounds.')
+      throw new OutOfBoundsError('Out of bounds.')
     }
 
     const [finalIndex, current] = this.#findInitialBuffer(offset)
@@ -226,44 +249,44 @@ class DynamicBuffer {
     return this.#readBuffer.readUInt8(0)
   }
 
-  readUInt16BE (offset = 0) {
+  readUInt16BE (offset: number = 0): number {
     this.#readMultiple(offset, 2)
     return this.#readBuffer.readUInt16BE(0)
   }
 
-  readUInt16LE (offset = 0) {
+  readUInt16LE (offset: number = 0): number {
     this.#readMultiple(offset, 2)
     return this.#readBuffer.readUInt16LE(0)
   }
 
-  readUInt32BE (offset = 0) {
+  readUInt32BE (offset: number = 0): number {
     this.#readMultiple(offset, 4)
     return this.#readBuffer.readUInt32BE(0)
   }
 
-  readUInt32LE (offset = 0) {
+  readUInt32LE (offset: number = 0): number {
     this.#readMultiple(offset, 4)
     return this.#readBuffer.readUInt32LE(0)
   }
 
-  readBigUInt64BE (offset = 0) {
+  readBigUInt64BE (offset: number = 0): bigint {
     this.#readMultiple(offset, 8)
     return this.#readBuffer.readBigUInt64BE(0)
   }
 
-  readBigUInt64LE (offset = 0) {
+  readBigUInt64LE (offset: number = 0): bigint {
     this.#readMultiple(offset, 8)
     return this.#readBuffer.readBigUInt64LE(0)
   }
 
-  readUnsignedVarInt (offset = 0) {
+  readUnsignedVarInt (offset: number): [number, number] {
     let i = 0
-    let byte
+    let byte: number
     let value = 0
     let read = 0
 
     if (offset < 0 || offset >= this.length) {
-      throw new Error('Out of bounds.')
+      throw new OutOfBoundsError('Out of bounds.')
     }
 
     // Find the initial buffer
@@ -285,14 +308,14 @@ class DynamicBuffer {
     return [value, read]
   }
 
-  readUnsignedVarInt64 (offset = 0) {
+  readUnsignedVarInt64 (offset: number): [bigint, number] {
     let i = 0n
-    let byte
+    let byte: bigint
     let value = 0n
     let read = 0
 
     if (offset < 0 || offset >= this.length) {
-      throw new Error('Out of bounds.')
+      throw new OutOfBoundsError('Out of bounds.')
     }
 
     // Find the initial buffer
@@ -314,9 +337,9 @@ class DynamicBuffer {
     return [value, read]
   }
 
-  readInt8 (offset = 0) {
+  readInt8 (offset: number = 0): number {
     if (offset < 0 || offset >= this.length) {
-      throw new Error('Out of bounds.')
+      throw new OutOfBoundsError('Out of bounds.')
     }
 
     const [finalIndex, current] = this.#findInitialBuffer(offset)
@@ -325,67 +348,67 @@ class DynamicBuffer {
     return this.#readBuffer.readInt8(0)
   }
 
-  readInt16BE (offset = 0) {
+  readInt16BE (offset: number = 0): number {
     this.#readMultiple(offset, INT16_SIZE)
     return this.#readBuffer.readInt16BE(0)
   }
 
-  readInt16LE (offset = 0) {
+  readInt16LE (offset: number = 0): number {
     this.#readMultiple(offset, INT16_SIZE)
     return this.#readBuffer.readInt16LE(0)
   }
 
-  readInt32BE (offset = 0) {
+  readInt32BE (offset: number = 0): number {
     this.#readMultiple(offset, INT32_SIZE)
     return this.#readBuffer.readInt32BE(0)
   }
 
-  readInt32LE (offset = 0) {
+  readInt32LE (offset: number = 0): number {
     this.#readMultiple(offset, INT32_SIZE)
     return this.#readBuffer.readInt32LE(0)
   }
 
-  readBigInt64BE (offset = 0) {
+  readBigInt64BE (offset: number = 0): bigint {
     this.#readMultiple(offset, INT64_SIZE)
     return this.#readBuffer.readBigInt64BE(0)
   }
 
-  readBigInt64LE (offset = 0) {
+  readBigInt64LE (offset: number = 0): bigint {
     this.#readMultiple(offset, INT64_SIZE)
     return this.#readBuffer.readBigInt64LE(0)
   }
 
-  readVarInt (offset) {
+  readVarInt (offset: number): [number, number] {
     const [value, read] = this.readUnsignedVarInt(offset)
     return [intZigZagDecode(value), read]
   }
 
-  readVarInt64 (offset) {
+  readVarInt64 (offset: number): [bigint, number] {
     const [value, read] = this.readUnsignedVarInt64(offset)
     return [int64ZigZagDecode(value), read]
   }
 
-  readFloatBE (offset = 0) {
+  readFloatBE (offset: number = 0): number {
     this.#readMultiple(offset, INT32_SIZE)
     return this.#readBuffer.readFloatBE(0)
   }
 
-  readFloatLE (offset = 0) {
+  readFloatLE (offset: number = 0): number {
     this.#readMultiple(offset, INT32_SIZE)
     return this.#readBuffer.readFloatLE(0)
   }
 
-  readDoubleBE (offset = 0) {
+  readDoubleBE (offset: number = 0): number {
     this.#readMultiple(offset, INT64_SIZE)
     return this.#readBuffer.readDoubleBE(0)
   }
 
-  readDoubleLE (offset = 0) {
+  readDoubleLE (offset: number = 0): number {
     this.#readMultiple(offset, INT64_SIZE)
     return this.#readBuffer.readDoubleLE(0)
   }
 
-  writeUInt8 (value, append = true) {
+  writeUInt8 (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT8_SIZE)
     buffer.writeUInt8(value)
 
@@ -398,7 +421,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeUInt16BE (value, append = true) {
+  writeUInt16BE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT16_SIZE)
     buffer.writeUInt16BE(value)
 
@@ -411,7 +434,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeUInt16LE (value, append = true) {
+  writeUInt16LE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT16_SIZE)
     buffer.writeUInt16LE(value)
 
@@ -424,7 +447,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeUInt32BE (value, append = true) {
+  writeUInt32BE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT32_SIZE)
     buffer.writeUInt32BE(value)
 
@@ -437,7 +460,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeUInt32LE (value, append = true) {
+  writeUInt32LE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT32_SIZE)
     buffer.writeUInt32LE(value)
 
@@ -450,7 +473,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeBigUInt64BE (value, append = true) {
+  writeBigUInt64BE (value: bigint, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT64_SIZE)
     buffer.writeBigUInt64BE(value)
 
@@ -463,7 +486,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeBigUInt64LE (value, append = true) {
+  writeBigUInt64LE (value: bigint, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT64_SIZE)
     buffer.writeBigUInt64LE(value)
 
@@ -476,8 +499,8 @@ class DynamicBuffer {
     return this
   }
 
-  writeUnsignedVarInt (value, append = true) {
-    const buffer = Buffer.alloc(sizeOfUnsignedVarInt(value))
+  writeUnsignedVarInt (value: number, append: boolean = true): void {
+    const buffer = Buffer.allocUnsafe(sizeOfUnsignedVarInt(value))
     let position = 0
 
     while ((value & BITS_8PLUS_MASK) !== 0) {
@@ -495,8 +518,8 @@ class DynamicBuffer {
     }
   }
 
-  writeUnsignedVarInt64 (value, append = true) {
-    const buffer = Buffer.alloc(sizeOfUnsignedVarInt64(value))
+  writeUnsignedVarInt64 (value: bigint, append: boolean = true) {
+    const buffer = Buffer.allocUnsafe(sizeOfUnsignedVarInt64(value))
     let position = 0
 
     while ((value & BITS_8PLUS_MASK_64) !== 0n) {
@@ -514,7 +537,7 @@ class DynamicBuffer {
     }
   }
 
-  writeInt8 (value, append = true) {
+  writeInt8 (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT8_SIZE)
     buffer.writeInt8(value)
 
@@ -527,7 +550,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeInt16BE (value, append = true) {
+  writeInt16BE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT16_SIZE)
     buffer.writeInt16BE(value)
 
@@ -540,7 +563,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeInt16LE (value, append = true) {
+  writeInt16LE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT16_SIZE)
     buffer.writeInt16LE(value)
 
@@ -553,7 +576,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeInt32BE (value, append = true) {
+  writeInt32BE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT32_SIZE)
     buffer.writeInt32BE(value)
 
@@ -566,7 +589,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeInt32LE (value, append = true) {
+  writeInt32LE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT32_SIZE)
     buffer.writeInt32LE(value)
 
@@ -579,7 +602,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeBigInt64BE (value, append = true) {
+  writeBigInt64BE (value: bigint, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT64_SIZE)
     buffer.writeBigInt64BE(value)
 
@@ -592,7 +615,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeBigInt64LE (value, append = true) {
+  writeBigInt64LE (value: bigint, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT64_SIZE)
     buffer.writeBigInt64LE(value)
 
@@ -605,15 +628,15 @@ class DynamicBuffer {
     return this
   }
 
-  writeVarInt (value, append = true) {
+  writeVarInt (value: number, append: boolean = true) {
     this.writeUnsignedVarInt(intZigZagEncode(value), append)
   }
 
-  writeVarInt64 (value, append = true) {
+  writeVarInt64 (value: bigint, append: boolean = true) {
     this.writeUnsignedVarInt64(int64ZigZagEncode(value), append)
   }
 
-  writeFloatBE (value, append = true) {
+  writeFloatBE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT32_SIZE)
     buffer.writeFloatBE(value)
 
@@ -626,7 +649,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeFloatLE (value, append = true) {
+  writeFloatLE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT32_SIZE)
     buffer.writeFloatLE(value)
 
@@ -639,7 +662,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeDoubleBE (value, append = true) {
+  writeDoubleBE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT64_SIZE)
     buffer.writeDoubleBE(value)
 
@@ -652,7 +675,7 @@ class DynamicBuffer {
     return this
   }
 
-  writeDoubleLE (value, append = true) {
+  writeDoubleLE (value: number, append: boolean = true) {
     const buffer = Buffer.allocUnsafe(INT64_SIZE)
     buffer.writeDoubleLE(value)
 
@@ -665,7 +688,7 @@ class DynamicBuffer {
     return this
   }
 
-  #findInitialBuffer (start) {
+  #findInitialBuffer (start: number): [number, number] {
     let current = 0
 
     // Find the initial buffer
@@ -677,9 +700,9 @@ class DynamicBuffer {
     return [start, current]
   }
 
-  #readMultiple (index, length) {
+  #readMultiple (index: number, length: number) {
     if (index < 0 || index + length > this.length) {
-      throw new Error('Out of bounds.')
+      throw new OutOfBoundsError('Out of bounds.')
     }
 
     let [startOffset, current] = this.#findInitialBuffer(index)
@@ -694,5 +717,3 @@ class DynamicBuffer {
     }
   }
 }
-
-module.exports.DynamicBuffer = DynamicBuffer
