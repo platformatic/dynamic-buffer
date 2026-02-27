@@ -115,6 +115,10 @@ export class DynamicBuffer {
       throw new OutOfBoundsError('Out of bounds.')
     }
 
+    if (start === end) {
+      return new DynamicBuffer(EMPTY_BUFFER)
+    }
+
     if (this.buffers.length === 0) {
       return new DynamicBuffer(EMPTY_BUFFER)
     } else if (this.buffers.length === 1) {
@@ -150,6 +154,10 @@ export class DynamicBuffer {
 
     if (start < 0 || start > this.length || end > this.length) {
       throw new OutOfBoundsError('Out of bounds.')
+    }
+
+    if (start === end) {
+      return EMPTY_BUFFER
     }
 
     if (this.buffers.length === 0) {
