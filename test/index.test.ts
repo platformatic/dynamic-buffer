@@ -205,6 +205,16 @@ test('subarray', () => {
     deepStrictEqual(sub.buffer, Buffer.from([5]))
   }
 
+  {
+    const sub = multiBuffer.subarray(6)
+    deepStrictEqual(sub.buffer, EMPTY_BUFFER)
+  }
+
+  {
+    const sub = multiBuffer.subarray(6, 6)
+    deepStrictEqual(sub.buffer, EMPTY_BUFFER)
+  }
+
   // Test Out of bounds
   throws(
     () => {
@@ -297,6 +307,16 @@ test('slice', () => {
 
     // Only check that the first byte is correct
     strictEqual(slice[0], 5)
+  }
+
+  {
+    const slice = multiBuffer.slice(6)
+    deepStrictEqual(slice, EMPTY_BUFFER)
+  }
+
+  {
+    const slice = multiBuffer.slice(6, 6)
+    deepStrictEqual(slice, EMPTY_BUFFER)
   }
 
   // Test Out of bounds
