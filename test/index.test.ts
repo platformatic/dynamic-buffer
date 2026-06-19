@@ -1,7 +1,8 @@
 import { deepStrictEqual, notStrictEqual, strictEqual, throws } from 'node:assert'
+import { Readable } from 'node:stream'
 import test from 'node:test'
 import { EMPTY_BUFFER } from '../src/definitions.ts'
-import { DynamicBuffer, OutOfBoundsError } from '../src/index.ts'
+import { DynamicBuffer, DynamicBufferReadable, OutOfBoundsError } from '../src/index.ts'
 
 test('static isDynamicBuffer', () => {
   // Test with a DynamicBuffer instance
@@ -59,6 +60,57 @@ test('buffer', () => {
   // Test with multiple Buffers
   const multiBuffer = new DynamicBuffer([Buffer.from([1, 2]), Buffer.from([3, 4])])
   deepStrictEqual(multiBuffer.buffer, Buffer.from([1, 2, 3, 4]))
+})
+
+test('asReadable', async () => {
+  const emptyBuffer = new DynamicBuffer()
+  const emptyReadable = emptyBuffer.asReadable()
+  const emptyChunks: Buffer[] = []
+
+  strictEqual(emptyReadable instanceof DynamicBufferReadable, true)
+  strictEqual(emptyReadable instanceof Readable, true)
+
+  for await (const chunk of emptyReadable) {
+    emptyChunks.push(chunk)
+  }
+
+  deepStrictEqual(emptyChunks, [])
+
+  const singleChunk = Buffer.from([1, 2, 3])
+  const singleBuffer = new DynamicBuffer(singleChunk)
+  const singleChunks: Buffer[] = []
+
+  for await (const chunk of singleBuffer.asReadable()) {
+    singleChunks.push(chunk)
+  }
+
+  strictEqual(singleChunks.length, 1)
+  strictEqual(singleChunks[0], singleChunk)
+  deepStrictEqual(Buffer.concat(singleChunks), singleChunk)
+
+  const multiBuffer = new DynamicBuffer([Buffer.from([1, 2]), Buffer.from([3, 4]), Buffer.from([5, 6])])
+  const multiChunks: Buffer[] = []
+
+  for await (const chunk of multiBuffer.asReadable()) {
+    multiChunks.push(chunk)
+  }
+
+  deepStrictEqual(Buffer.concat(multiChunks), Buffer.from([1, 2, 3, 4, 5, 6]))
+})
+
+test('asReadable snapshots the buffer list', async () => {
+  const dynamicBuffer = new DynamicBuffer([Buffer.from([2]), Buffer.from([3])])
+  const readable = dynamicBuffer.asReadable()
+
+  dynamicBuffer.prepend(Buffer.from([1]))
+  dynamicBuffer.append(Buffer.from([4]))
+
+  const chunks: Buffer[] = []
+  for await (const chunk of readable) {
+    chunks.push(chunk)
+  }
+
+  deepStrictEqual(Buffer.concat(chunks), Buffer.from([2, 3]))
 })
 
 test('append', () => {

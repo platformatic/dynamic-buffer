@@ -1,4 +1,5 @@
 import { EMPTY_BUFFER, INT16_SIZE, INT32_SIZE, INT64_SIZE, INT8_SIZE } from './definitions.ts'
+import { DynamicBufferReadable } from './readable.ts'
 import {
   BITS_8PLUS_MASK,
   BITS_8PLUS_MASK_64,
@@ -17,6 +18,7 @@ import {
 const instanceIdentifier = Symbol('plt.dynamicBuffer.instanceIdentifier')
 
 export * from './definitions.ts'
+export * from './readable.ts'
 export * from './varint.ts'
 
 export class OutOfBoundsError extends Error {
@@ -73,6 +75,10 @@ export class DynamicBuffer {
     this.length += buffer.length
 
     return this
+  }
+
+  asReadable (): DynamicBufferReadable {
+    return new DynamicBufferReadable(this.buffers)
   }
 
   prepend (buffer: Buffer): this {
