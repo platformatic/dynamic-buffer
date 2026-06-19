@@ -40,6 +40,7 @@ console.log(db.buffer) // <Buffer 01 02 03 04 05 06 07 08>
 ### Exports
 
 - `DynamicBuffer`
+- `DynamicBufferReadable`
 - `OutOfBoundsError`
 
 ### Constructor
@@ -101,6 +102,13 @@ Appends chunks from another `DynamicBuffer`. Returns `this`.
 #### `prependFrom(dynamicBuffer)`
 
 Prepends chunks from another `DynamicBuffer`. Returns `this`.
+
+#### `asReadable()`
+
+Returns a `DynamicBufferReadable` stream over the current chunks.
+
+- Streams chunks without concatenating them
+- Snapshots the chunk list when called, so later `append` or `prepend` calls do not affect the stream
 
 ### Data access
 
@@ -199,6 +207,17 @@ message.writeVarInt(payload.length) // payload size
 message.append(payload)
 
 socket.write(message.buffer)
+```
+
+### Streaming a dynamic buffer
+
+```ts
+import { pipeline } from 'node:stream/promises'
+import { DynamicBuffer } from '@platformatic/dynamic-buffer'
+
+const body = new DynamicBuffer([Buffer.from('hello'), Buffer.from(' world')])
+
+await pipeline(body.asReadable(), destination)
 ```
 
 ### Parsing streaming data
