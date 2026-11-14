@@ -31,7 +31,14 @@ export class OutOfBoundsError extends Error {
 }
 
 export class DynamicBuffer {
-  buffers: Buffer[]
+  // The physical chunk array. The logical content is:
+  //   #chunks[#headIndex].subarray(#headOffset) ++ #chunks[#headIndex + 1..]
+  // Keeping a head cursor (instead of physically trimming/splicing on every
+  // consume) makes `consume` amortized O(1) per chunk rather than O(n^2), while
+  // `buffers` still exposes a fully-materialized (trimmed) view on demand.
+  #chunks: Buffer[]
+  #headIndex: number
+  #headOffset: number
   length: number
   #readBuffer: Buffer; // This is used from the fixed length readers
   [instanceIdentifier]: boolean
@@ -41,18 +48,20 @@ export class DynamicBuffer {
   }
 
   constructor (buffers?: Buffer | Buffer[]) {
-    this.buffers = []
-    this.length = 0
+    this.#chunks = []
+    this.#headIndex = 0
+    this.#headOffset = 0
     this.#readBuffer = Buffer.allocUnsafe(8)
     this[instanceIdentifier] = true
+    this.length = 0
 
     if (buffers) {
       if (Buffer.isBuffer(buffers)) {
-        this.buffers.push(buffers)
+        this.#chunks.push(buffers)
         this.length += buffers.length
       } else {
         for (const buffer of buffers) {
-          this.buffers.push(buffer)
+          this.#chunks.push(buffer)
           this.length += buffer.length
         }
       }
@@ -60,39 +69,51 @@ export class DynamicBuffer {
   }
 
   get buffer (): Buffer {
-    if (this.buffers.length === 0) {
+    if (this.length === 0) {
       return EMPTY_BUFFER
     }
-    if (this.buffers.length === 1) {
-      return this.buffers[0]
+
+    const chunks = this.#logicalChunks()
+
+    if (chunks.length === 1) {
+      return chunks[0]
     }
 
-    return Buffer.concat(this.buffers, this.length)
+    return Buffer.concat(chunks, this.length)
+  }
+
+  get buffers (): Buffer[] {
+    // Materialize the logical (trimmed) view so callers get a stable, writable
+    // array of the current chunks — matching the historical contract.
+    this.#compact()
+    return this.#chunks
   }
 
   append (buffer: Buffer): this {
-    this.buffers.push(buffer)
+    this.#chunks.push(buffer)
     this.length += buffer.length
 
     return this
   }
 
   asReadable (): DynamicBufferReadable {
-    return new DynamicBufferReadable(this.buffers)
+    return new DynamicBufferReadable(this.#logicalChunks())
   }
 
   prepend (buffer: Buffer): this {
-    this.buffers.unshift(buffer)
+    // Materialize first so prepended data sits at the true logical front.
+    this.#compact()
+    this.#chunks.unshift(buffer)
     this.length += buffer.length
 
     return this
   }
 
   appendFrom (DynamicBuffer: DynamicBuffer): this {
-    const buffers = DynamicBuffer.buffers
+    const buffers = DynamicBuffer.#logicalChunks()
 
     for (let i = 0; i < buffers.length; i++) {
-      this.buffers.push(buffers[i])
+      this.#chunks.push(buffers[i])
     }
 
     this.length += DynamicBuffer.length
@@ -101,10 +122,12 @@ export class DynamicBuffer {
   }
 
   prependFrom (DynamicBuffer: DynamicBuffer): this {
-    const buffers = DynamicBuffer.buffers
+    this.#compact()
+
+    const buffers = DynamicBuffer.#logicalChunks()
 
     for (let i = buffers.length - 1; i >= 0; i--) {
-      this.buffers.unshift(buffers[i])
+      this.#chunks.unshift(buffers[i])
     }
 
     this.length += DynamicBuffer.length
@@ -125,10 +148,15 @@ export class DynamicBuffer {
       return new DynamicBuffer(EMPTY_BUFFER)
     }
 
-    if (this.buffers.length === 0) {
+    if (this.length === 0) {
       return new DynamicBuffer(EMPTY_BUFFER)
-    } else if (this.buffers.length === 1) {
-      return new DynamicBuffer(this.buffers[0].subarray(start, end))
+    }
+
+    const chunks = this.#chunks
+
+    // Fast path: a single untouched chunk covers the whole logical range.
+    if (chunks.length === 1 && this.#headIndex === 0 && this.#headOffset === 0) {
+      return new DynamicBuffer(chunks[0].subarray(start, end))
     }
 
     let length = end - start
@@ -136,15 +164,15 @@ export class DynamicBuffer {
     start = startBuffer
 
     // The slice is in a single buffer
-    if (length <= this.buffers[current].length - start) {
-      return new DynamicBuffer(this.buffers[current].subarray(start, start + length))
+    if (length <= chunks[current].length - start) {
+      return new DynamicBuffer(chunks[current].subarray(start, start + length))
     }
 
     // Copy all subarrays
     const buffers = []
     while (length > 0) {
-      const currentEnd = Math.min(this.buffers[current].length - start, length)
-      buffers.push(this.buffers[current].subarray(start, start + currentEnd))
+      const currentEnd = Math.min(chunks[current].length - start, length)
+      buffers.push(chunks[current].subarray(start, start + currentEnd))
       length -= currentEnd
       start = 0
       current++
@@ -166,10 +194,15 @@ export class DynamicBuffer {
       return EMPTY_BUFFER
     }
 
-    if (this.buffers.length === 0) {
+    if (this.length === 0) {
       return EMPTY_BUFFER
-    } else if (this.buffers.length === 1) {
-      return this.buffers[0].subarray(start, end)
+    }
+
+    const chunks = this.#chunks
+
+    // Fast path: a single untouched chunk covers the whole logical range.
+    if (chunks.length === 1 && this.#headIndex === 0 && this.#headOffset === 0) {
+      return chunks[0].slice(start, end)
     }
 
     let position = 0
@@ -178,15 +211,15 @@ export class DynamicBuffer {
     start = startBuffer
 
     // The slice is in a single buffer
-    if (length <= this.buffers[current].length - start) {
-      return this.buffers[current].slice(start, start + length)
+    if (length <= chunks[current].length - start) {
+      return chunks[current].slice(start, start + length)
     }
 
     // Copy all buffers
     const buffer = Buffer.allocUnsafe(length)
     while (length > 0) {
-      const currentEnd = Math.min(this.buffers[current].length - start, length)
-      this.buffers[current].copy(buffer, position, start, start + currentEnd)
+      const currentEnd = Math.min(chunks[current].length - start, length)
+      chunks[current].copy(buffer, position, start, start + currentEnd)
       position += currentEnd
       length -= currentEnd
       start = 0
@@ -198,13 +231,10 @@ export class DynamicBuffer {
 
   clone (deep: boolean = false): DynamicBuffer {
     if (!deep) {
-      return new DynamicBuffer(this.buffers)
+      return new DynamicBuffer(this.#logicalChunks())
     }
 
-    const buffers = []
-    for (const buffer of this.buffers) {
-      buffers.push(buffer.slice())
-    }
+    const buffers = this.#logicalChunks().map(buffer => buffer.slice())
 
     return new DynamicBuffer(buffers)
   }
@@ -218,23 +248,16 @@ export class DynamicBuffer {
       return this
     }
 
+    this.length -= offset
+
     const [start, current] = this.#findInitialBuffer(offset)
 
-    // Remove other arrays
-    if (current > 0) {
-      this.buffers.splice(0, current)
-    }
+    this.#headIndex = current
+    this.#headOffset = start
 
-    // Trim the new first array
-    if (start > 0) {
-      this.buffers[0] = this.buffers[0].subarray(start)
-    }
-
-    // Compute length again
-    this.length = 0
-    for (const buffer of this.buffers) {
-      this.length += buffer.length
-    }
+    // Periodically drop fully-consumed chunks so a streaming parser does not
+    // retain them forever. Amortized O(1) per chunk.
+    this.#maybeCompact()
 
     return this
   }
@@ -249,7 +272,7 @@ export class DynamicBuffer {
     }
 
     const [finalIndex, current] = this.#findInitialBuffer(offset)
-    return this.buffers[current][finalIndex]
+    return this.#chunks[current][finalIndex]
   }
 
   readUInt8 (offset: number = 0): number {
@@ -258,7 +281,7 @@ export class DynamicBuffer {
     }
 
     const [finalIndex, current] = this.#findInitialBuffer(offset)
-    this.#readBuffer[0] = this.buffers[current][finalIndex]
+    this.#readBuffer[0] = this.#chunks[current][finalIndex]
 
     return this.#readBuffer.readUInt8(0)
   }
@@ -303,14 +326,21 @@ export class DynamicBuffer {
       throw new OutOfBoundsError('Out of bounds.')
     }
 
+    const available = this.length - offset
+
     // Find the initial buffer
     let [startOffset, current] = this.#findInitialBuffer(offset)
 
     do {
-      byte = this.buffers[current][startOffset++]
+      if (read >= available) {
+        // The most significant bit demands another byte that does not exist.
+        throw new OutOfBoundsError('Incomplete varint.')
+      }
+
+      byte = this.#chunks[current][startOffset++]
       read++
 
-      if (startOffset >= this.buffers[current].length) {
+      if (startOffset >= this.#chunks[current].length) {
         current++
         startOffset = 0
       }
@@ -332,14 +362,21 @@ export class DynamicBuffer {
       throw new OutOfBoundsError('Out of bounds.')
     }
 
+    const available = this.length - offset
+
     // Find the initial buffer
     let [startOffset, current] = this.#findInitialBuffer(offset)
 
     do {
-      byte = BigInt(this.buffers[current][startOffset++])
+      if (read >= available) {
+        // The most significant bit demands another byte that does not exist.
+        throw new OutOfBoundsError('Incomplete varint.')
+      }
+
+      byte = BigInt(this.#chunks[current][startOffset++])
       read++
 
-      if (startOffset >= this.buffers[current].length) {
+      if (startOffset >= this.#chunks[current].length) {
         current++
         startOffset = 0
       }
@@ -357,7 +394,7 @@ export class DynamicBuffer {
     }
 
     const [finalIndex, current] = this.#findInitialBuffer(offset)
-    this.#readBuffer[0] = this.buffers[current][finalIndex]
+    this.#readBuffer[0] = this.#chunks[current][finalIndex]
 
     return this.#readBuffer.readInt8(0)
   }
@@ -702,16 +739,71 @@ export class DynamicBuffer {
     return this
   }
 
-  #findInitialBuffer (start: number): [number, number] {
-    let current = 0
+  // Returns the logical (trimmed) chunk list without mutating `this`.
+  #logicalChunks (): Buffer[] {
+    const chunks = this.#chunks
+    const hi = this.#headIndex
 
-    // Find the initial buffer
-    while (start > 0 && start >= this.buffers[current].length) {
-      start -= this.buffers[current].length
+    if (hi === 0 && this.#headOffset === 0) {
+      return chunks
+    }
+
+    const out = chunks.slice(hi)
+
+    if (this.#headOffset > 0 && out.length > 0) {
+      out[0] = out[0].subarray(this.#headOffset)
+    }
+
+    return out
+  }
+
+  // Drop fully-consumed chunks and trim the head. Mutates the internal
+  // representation so it can be exposed through the `buffers` getter.
+  #compact () {
+    const chunks = this.#chunks
+    const hi = this.#headIndex
+    const ho = this.#headOffset
+
+    if (hi === 0 && ho === 0) {
+      return
+    }
+
+    const out = chunks.slice(hi)
+
+    if (ho > 0 && out.length > 0) {
+      out[0] = out[0].subarray(ho)
+    }
+
+    this.#chunks = out
+    this.#headIndex = 0
+    this.#headOffset = 0
+  }
+
+  #maybeCompact () {
+    if (this.#headIndex === 0 && this.#headOffset === 0) {
+      return
+    }
+
+    const length = this.#chunks.length
+
+    // Compact when the head has consumed a substantial prefix, or everything.
+    if (this.#headIndex >= length || (this.#headIndex > 0 && this.#headIndex >= length / 2)) {
+      this.#compact()
+    }
+  }
+
+  // Returns [offsetWithinChunk, chunkIndex] for a logical offset, accounting for
+  // the head cursor. Scans from the head, never from index 0.
+  #findInitialBuffer (start: number): [number, number] {
+    let current = this.#headIndex
+    let off = this.#headOffset + start
+
+    while (current < this.#chunks.length && off >= this.#chunks[current].length) {
+      off -= this.#chunks[current].length
       current++
     }
 
-    return [start, current]
+    return [off, current]
   }
 
   #readMultiple (index: number, length: number) {
@@ -722,9 +814,9 @@ export class DynamicBuffer {
     let [startOffset, current] = this.#findInitialBuffer(index)
 
     for (let i = 0; i < length; i++) {
-      this.#readBuffer[i] = this.buffers[current][startOffset++]
+      this.#readBuffer[i] = this.#chunks[current][startOffset++]
 
-      if (startOffset === this.buffers[current].length) {
+      if (startOffset === this.#chunks[current].length) {
         current++
         startOffset = 0
       }
