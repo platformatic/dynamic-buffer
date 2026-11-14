@@ -39,6 +39,15 @@ export class DynamicBuffer {
   #chunks: Buffer[]
   #headIndex: number
   #headOffset: number
+  // Position cache. #cursorIndex is the physical index of the chunk found by the
+  // last lookup (or -1 when unknown) and #cursorStart is the logical offset at
+  // which that chunk begins. Lookups resume from here instead of walking the
+  // chunk list from the head, which makes sequential reads amortized O(1).
+  #cursorIndex: number
+  #cursorStart: number
+  // Offset within the chunk returned by the last #locate call. Kept in a field
+  // so that lookups do not allocate a tuple.
+  #locatedOffset: number
   length: number
   #readBuffer: Buffer; // This is used from the fixed length readers
   [instanceIdentifier]: boolean
@@ -51,6 +60,9 @@ export class DynamicBuffer {
     this.#chunks = []
     this.#headIndex = 0
     this.#headOffset = 0
+    this.#cursorIndex = -1
+    this.#cursorStart = 0
+    this.#locatedOffset = 0
     this.#readBuffer = Buffer.allocUnsafe(8)
     this[instanceIdentifier] = true
     this.length = 0
@@ -86,6 +98,8 @@ export class DynamicBuffer {
     // Materialize the logical (trimmed) view so callers get a stable, writable
     // array of the current chunks — matching the historical contract.
     this.#compact()
+    // The caller receives the internal array and might change it.
+    this.#cursorIndex = -1
     return this.#chunks
   }
 
@@ -103,6 +117,7 @@ export class DynamicBuffer {
   prepend (buffer: Buffer): this {
     // Materialize first so prepended data sits at the true logical front.
     this.#compact()
+    this.#cursorIndex = -1
     this.#chunks.unshift(buffer)
     this.length += buffer.length
 
@@ -123,6 +138,7 @@ export class DynamicBuffer {
 
   prependFrom (DynamicBuffer: DynamicBuffer): this {
     this.#compact()
+    this.#cursorIndex = -1
 
     const buffers = DynamicBuffer.#logicalChunks()
 
@@ -160,8 +176,8 @@ export class DynamicBuffer {
     }
 
     let length = end - start
-    let [startBuffer, current] = this.#findInitialBuffer(start)
-    start = startBuffer
+    let current = this.#locate(start)
+    start = this.#locatedOffset
 
     // The slice is in a single buffer
     if (length <= chunks[current].length - start) {
@@ -207,8 +223,8 @@ export class DynamicBuffer {
 
     let position = 0
     let length = end - start
-    let [startBuffer, current] = this.#findInitialBuffer(start)
-    start = startBuffer
+    let current = this.#locate(start)
+    start = this.#locatedOffset
 
     // The slice is in a single buffer
     if (length <= chunks[current].length - start) {
@@ -250,10 +266,12 @@ export class DynamicBuffer {
 
     this.length -= offset
 
-    const [start, current] = this.#findInitialBuffer(offset)
+    const current = this.#locate(offset)
 
     this.#headIndex = current
-    this.#headOffset = start
+    this.#headOffset = this.#locatedOffset
+    // Every logical offset just shifted
+    this.#cursorIndex = -1
 
     // Periodically drop fully-consumed chunks so a streaming parser does not
     // retain them forever. Amortized O(1) per chunk.
@@ -271,8 +289,8 @@ export class DynamicBuffer {
       throw new OutOfBoundsError('Out of bounds.')
     }
 
-    const [finalIndex, current] = this.#findInitialBuffer(offset)
-    return this.#chunks[current][finalIndex]
+    const current = this.#locate(offset)
+    return this.#chunks[current][this.#locatedOffset]
   }
 
   readUInt8 (offset: number = 0): number {
@@ -280,8 +298,8 @@ export class DynamicBuffer {
       throw new OutOfBoundsError('Out of bounds.')
     }
 
-    const [finalIndex, current] = this.#findInitialBuffer(offset)
-    this.#readBuffer[0] = this.#chunks[current][finalIndex]
+    const current = this.#locate(offset)
+    this.#readBuffer[0] = this.#chunks[current][this.#locatedOffset]
 
     return this.#readBuffer.readUInt8(0)
   }
@@ -329,7 +347,8 @@ export class DynamicBuffer {
     const available = this.length - offset
 
     // Find the initial buffer
-    let [startOffset, current] = this.#findInitialBuffer(offset)
+    let current = this.#locate(offset)
+    let startOffset = this.#locatedOffset
 
     do {
       if (read >= available) {
@@ -340,7 +359,8 @@ export class DynamicBuffer {
       byte = this.#chunks[current][startOffset++]
       read++
 
-      if (startOffset >= this.#chunks[current].length) {
+      // Move to the next chunk which has data, as chunks can be empty
+      while (current < this.#chunks.length && startOffset >= this.#chunks[current].length) {
         current++
         startOffset = 0
       }
@@ -365,7 +385,8 @@ export class DynamicBuffer {
     const available = this.length - offset
 
     // Find the initial buffer
-    let [startOffset, current] = this.#findInitialBuffer(offset)
+    let current = this.#locate(offset)
+    let startOffset = this.#locatedOffset
 
     do {
       if (read >= available) {
@@ -376,7 +397,8 @@ export class DynamicBuffer {
       byte = BigInt(this.#chunks[current][startOffset++])
       read++
 
-      if (startOffset >= this.#chunks[current].length) {
+      // Move to the next chunk which has data, as chunks can be empty
+      while (current < this.#chunks.length && startOffset >= this.#chunks[current].length) {
         current++
         startOffset = 0
       }
@@ -393,8 +415,8 @@ export class DynamicBuffer {
       throw new OutOfBoundsError('Out of bounds.')
     }
 
-    const [finalIndex, current] = this.#findInitialBuffer(offset)
-    this.#readBuffer[0] = this.#chunks[current][finalIndex]
+    const current = this.#locate(offset)
+    this.#readBuffer[0] = this.#chunks[current][this.#locatedOffset]
 
     return this.#readBuffer.readInt8(0)
   }
@@ -777,6 +799,7 @@ export class DynamicBuffer {
     this.#chunks = out
     this.#headIndex = 0
     this.#headOffset = 0
+    this.#cursorIndex = -1
   }
 
   #maybeCompact () {
@@ -792,18 +815,51 @@ export class DynamicBuffer {
     }
   }
 
-  // Returns [offsetWithinChunk, chunkIndex] for a logical offset, accounting for
-  // the head cursor. Scans from the head, never from index 0.
-  #findInitialBuffer (start: number): [number, number] {
-    let current = this.#headIndex
-    let off = this.#headOffset + start
+  // Returns the physical index of the chunk which holds a logical offset and
+  // stores the offset within that chunk in #locatedOffset.
+  //
+  // The search starts from the chunk found by the previous lookup and walks
+  // forward or backward from there, so reading through the buffer sequentially
+  // costs amortized O(1) per read rather than O(chunks). When the offset is the
+  // logical end, the returned index is one past the last chunk.
+  #locate (start: number): number {
+    const chunks = this.#chunks
+    const head = this.#headIndex
 
-    while (current < this.#chunks.length && off >= this.#chunks[current].length) {
-      off -= this.#chunks[current].length
-      current++
+    // Fast path: the offset is in the first chunk, which is always the case
+    // when small frames are read and then consumed one after the other.
+    if (head < chunks.length) {
+      const offset = this.#headOffset + start
+
+      if (offset < chunks[head].length) {
+        this.#locatedOffset = offset
+        return head
+      }
     }
 
-    return [off, current]
+    let current = this.#cursorIndex
+    let base = this.#cursorStart
+
+    if (current === -1) {
+      current = this.#headIndex
+      base = -this.#headOffset
+    }
+
+    while (start < base) {
+      base -= chunks[--current].length
+    }
+
+    while (current < chunks.length && start - base >= chunks[current].length) {
+      base += chunks[current++].length
+    }
+
+    if (current < chunks.length) {
+      this.#cursorIndex = current
+      this.#cursorStart = base
+    }
+
+    this.#locatedOffset = start - base
+    return current
   }
 
   #readMultiple (index: number, length: number) {
@@ -811,12 +867,14 @@ export class DynamicBuffer {
       throw new OutOfBoundsError('Out of bounds.')
     }
 
-    let [startOffset, current] = this.#findInitialBuffer(index)
+    let current = this.#locate(index)
+    let startOffset = this.#locatedOffset
 
     for (let i = 0; i < length; i++) {
       this.#readBuffer[i] = this.#chunks[current][startOffset++]
 
-      if (startOffset === this.#chunks[current].length) {
+      // Move to the next chunk which has data, as chunks can be empty
+      while (current < this.#chunks.length && startOffset >= this.#chunks[current].length) {
         current++
         startOffset = 0
       }
