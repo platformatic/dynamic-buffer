@@ -6,7 +6,7 @@ export const LEAST_SIGNIFICANT_7_BITS_64 = 0x7fn // 127 or 0111 1111
 // This is used in varint to check if there are any other bits set after the first 7 bits,
 // which means it still needs more than a byte to represent the number in varint encoding
 export const BITS_8PLUS_MASK = 0xffffffff - 0x7f
-export const BITS_8PLUS_MASK_64 = 0xffffffffn - 0x7fn
+export const BITS_8PLUS_MASK_64 = 0xffffffffffffffffn - 0x7fn
 
 export function intZigZagEncode (value: number): number {
   return (value << 1) ^ (value >> 31)
@@ -17,7 +17,8 @@ export function intZigZagDecode (value: number): number {
 }
 
 export function int64ZigZagEncode (value: bigint): bigint {
-  return (value << 1n) ^ (value >> 31n)
+  // The sign is the 64th bit. The result is an unsigned 64-bit integer.
+  return BigInt.asUintN(64, (value << 1n) ^ (value >> 63n))
 }
 
 export function int64ZigZagDecode (value: bigint): bigint {
@@ -36,6 +37,9 @@ export function sizeOfUnsignedVarInt (value: number): number {
 }
 
 export function sizeOfUnsignedVarInt64 (value: bigint): number {
+  // A negative value is its two's complement, like in the 32-bit version
+  value = BigInt.asUintN(64, value)
+
   let bytes = 1
 
   while ((value & BITS_8PLUS_MASK_64) !== 0n) {

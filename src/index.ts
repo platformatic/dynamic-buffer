@@ -592,6 +592,9 @@ export class DynamicBuffer {
   }
 
   writeUnsignedVarInt64 (value: bigint, append: boolean = true) {
+    // A negative value is its two's complement, like in the 32-bit version
+    value = BigInt.asUintN(64, value)
+
     const buffer = Buffer.allocUnsafe(sizeOfUnsignedVarInt64(value))
     let position = 0
 

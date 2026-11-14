@@ -68,3 +68,29 @@ test('size of unsigned varint (64-bit)', () => {
   strictEqual(sizeOfUnsignedVarInt64(2147483647n), 5)
   strictEqual(sizeOfUnsignedVarInt64(9223372036854775807n), 9)
 })
+
+test('zigzag encoding (64-bit) outside of the 32-bit range', () => {
+  strictEqual(int64ZigZagEncode(2147483647n), 4294967294n)
+  strictEqual(int64ZigZagEncode(-2147483648n), 4294967295n)
+  strictEqual(int64ZigZagEncode(2147483648n), 4294967296n)
+  strictEqual(int64ZigZagEncode(-2147483649n), 4294967297n)
+  strictEqual(int64ZigZagEncode(2n ** 40n), 2n ** 41n)
+  strictEqual(int64ZigZagEncode(-(2n ** 40n)), 2n ** 41n - 1n)
+  strictEqual(int64ZigZagEncode(2n ** 63n - 1n), 2n ** 64n - 2n)
+  strictEqual(int64ZigZagEncode(-(2n ** 63n)), 2n ** 64n - 1n)
+
+  for (const value of [2147483648n, -2147483649n, 2n ** 40n, -(2n ** 40n), 2n ** 63n - 1n, -(2n ** 63n)]) {
+    strictEqual(int64ZigZagDecode(int64ZigZagEncode(value)), value)
+  }
+})
+
+test('size of unsigned varint (64-bit) when only the high bits are set', () => {
+  strictEqual(sizeOfUnsignedVarInt64(2n ** 32n), 5)
+  strictEqual(sizeOfUnsignedVarInt64(2n ** 35n), 6)
+  strictEqual(sizeOfUnsignedVarInt64(2n ** 56n), 9)
+  strictEqual(sizeOfUnsignedVarInt64(2n ** 63n), 10)
+  strictEqual(sizeOfUnsignedVarInt64(2n ** 64n - 1n), 10)
+
+  // A negative value is its two's complement
+  strictEqual(sizeOfUnsignedVarInt64(-1n), 10)
+})
