@@ -153,6 +153,87 @@ test('incomplete varint throws OutOfBoundsError instead of reading past the end'
   strictEqual(value, 0x81)
 })
 
+test('empty buffers do not corrupt positional reads', () => {
+  const db = new DynamicBuffer()
+  db.append(Buffer.from([1, 2]))
+  db.append(Buffer.alloc(0))
+  db.append(Buffer.from([3, 4]))
+
+  strictEqual(db.length, 4)
+  deepStrictEqual(db.slice(0), Buffer.from([1, 2, 3, 4]))
+  deepStrictEqual(
+    [0, 1, 2, 3].map(i => db.readInt8(i)),
+    [1, 2, 3, 4]
+  )
+  strictEqual(db.readInt16BE(1), 0x0203)
+  strictEqual(db.readInt32BE(0), 0x01020304)
+})
+
+test('empty buffers are not stored as chunks', () => {
+  const empty = Buffer.alloc(0)
+
+  strictEqual(new DynamicBuffer(empty).buffers.length, 0)
+  strictEqual(new DynamicBuffer([empty, Buffer.from([1]), empty]).buffers.length, 1)
+
+  const db = new DynamicBuffer([Buffer.from([2])])
+  db.append(empty)
+  db.prepend(empty)
+  db.appendFrom(new DynamicBuffer([empty, Buffer.from([3]), empty]))
+  db.prependFrom(new DynamicBuffer([empty, Buffer.from([1]), empty]))
+
+  strictEqual(db.length, 3)
+  deepStrictEqual(db.buffers, [Buffer.from([1]), Buffer.from([2]), Buffer.from([3])])
+})
+
+test('randomized reads at every offset with interleaved empty buffers', () => {
+  const rnd = mulberry32(0xbadf00d)
+  const empty = Buffer.alloc(0)
+
+  for (let round = 0; round < 200; round++) {
+    const db = new DynamicBuffer()
+    let ref = Buffer.alloc(0)
+
+    for (let step = 0; step < 20; step++) {
+      // A third of the chunks are empty, the rest hold 1..4 bytes.
+      const size = rnd() < 0.33 ? 0 : 1 + Math.floor(rnd() * 4)
+      const chunk = Buffer.from(Array.from({ length: size }, () => Math.floor(rnd() * 256)))
+      const op = rnd()
+
+      if (op < 0.4) {
+        db.append(chunk)
+        ref = Buffer.concat([ref, chunk])
+      } else if (op < 0.6) {
+        db.prepend(chunk)
+        ref = Buffer.concat([chunk, ref])
+      } else if (op < 0.75) {
+        db.appendFrom(new DynamicBuffer([empty, chunk, empty]))
+        ref = Buffer.concat([ref, chunk])
+      } else if (op < 0.9) {
+        db.prependFrom(new DynamicBuffer([empty, chunk, empty]))
+        ref = Buffer.concat([chunk, ref])
+      } else if (ref.length > 0) {
+        const n = Math.floor(rnd() * ref.length)
+        db.consume(n)
+        ref = ref.subarray(n)
+      }
+
+      strictEqual(db.length, ref.length)
+
+      for (let i = 0; i < ref.length; i++) {
+        strictEqual(db.readUInt8(i), ref[i], `readUInt8 mismatch round=${round} step=${step} offset=${i}`)
+
+        if (i + 2 <= ref.length) {
+          strictEqual(db.readUInt16BE(i), ref.readUInt16BE(i))
+        }
+
+        if (i + 4 <= ref.length) {
+          strictEqual(db.readInt32LE(i), ref.readInt32LE(i))
+        }
+      }
+    }
+  }
+})
+
 test('consume rejects out-of-bounds', () => {
   const db = new DynamicBuffer([Buffer.from([1, 2])])
   db.consume(1)

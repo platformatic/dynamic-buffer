@@ -67,14 +67,20 @@ export class DynamicBuffer {
     this[instanceIdentifier] = true
     this.length = 0
 
+    // Empty chunks are never stored: they carry no data and every offset lookup
+    // would otherwise have to skip over them.
     if (buffers) {
       if (Buffer.isBuffer(buffers)) {
-        this.#chunks.push(buffers)
-        this.length += buffers.length
+        if (buffers.length > 0) {
+          this.#chunks.push(buffers)
+          this.length += buffers.length
+        }
       } else {
         for (const buffer of buffers) {
-          this.#chunks.push(buffer)
-          this.length += buffer.length
+          if (buffer.length > 0) {
+            this.#chunks.push(buffer)
+            this.length += buffer.length
+          }
         }
       }
     }
@@ -104,6 +110,10 @@ export class DynamicBuffer {
   }
 
   append (buffer: Buffer): this {
+    if (buffer.length === 0) {
+      return this
+    }
+
     this.#chunks.push(buffer)
     this.length += buffer.length
 
@@ -115,6 +125,10 @@ export class DynamicBuffer {
   }
 
   prepend (buffer: Buffer): this {
+    if (buffer.length === 0) {
+      return this
+    }
+
     // Materialize first so prepended data sits at the true logical front.
     this.#compact()
     this.#cursorIndex = -1
@@ -128,7 +142,9 @@ export class DynamicBuffer {
     const buffers = DynamicBuffer.#logicalChunks()
 
     for (let i = 0; i < buffers.length; i++) {
-      this.#chunks.push(buffers[i])
+      if (buffers[i].length > 0) {
+        this.#chunks.push(buffers[i])
+      }
     }
 
     this.length += DynamicBuffer.length
@@ -143,7 +159,9 @@ export class DynamicBuffer {
     const buffers = DynamicBuffer.#logicalChunks()
 
     for (let i = buffers.length - 1; i >= 0; i--) {
-      this.#chunks.unshift(buffers[i])
+      if (buffers[i].length > 0) {
+        this.#chunks.unshift(buffers[i])
+      }
     }
 
     this.length += DynamicBuffer.length
