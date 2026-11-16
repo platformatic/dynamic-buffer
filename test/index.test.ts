@@ -1617,3 +1617,37 @@ test('sequential reads do not rescan the chunks', () => {
   // A scan from the head on each read would visit about chunksCount ** 2 / 2 * 4 chunks (800M)
   strictEqual(visited < dynamicBuffer.length * 4, true, `visited ${visited} chunks`)
 })
+
+test('64-bit varints outside of the 32-bit range', () => {
+  // Zigzag varints as defined by Protocol Buffers, which is the encoding Kafka uses for its varlong
+  const encoded: [bigint, number[]][] = [
+    [2147483647n, [0xfe, 0xff, 0xff, 0xff, 0x0f]],
+    [-2147483648n, [0xff, 0xff, 0xff, 0xff, 0x0f]],
+    [2147483648n, [0x80, 0x80, 0x80, 0x80, 0x10]],
+    [-2147483649n, [0x81, 0x80, 0x80, 0x80, 0x10]],
+    [2n ** 40n, [0x80, 0x80, 0x80, 0x80, 0x80, 0x40]],
+    [2n ** 63n - 1n, [0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]],
+    [-(2n ** 63n), [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01]]
+  ]
+
+  for (const [value, bytes] of encoded) {
+    const dynamicBuffer = new DynamicBuffer()
+    dynamicBuffer.writeVarInt64(value)
+
+    deepStrictEqual(dynamicBuffer.buffer, Buffer.from(bytes), `bytes of ${value}`)
+    deepStrictEqual(dynamicBuffer.readVarInt64(0), [value, bytes.length])
+  }
+
+  // Unsigned values which have no bits set between the 8th and the 32nd
+  for (const value of [2n ** 32n, 2n ** 35n, 2n ** 56n, 2n ** 63n, 2n ** 64n - 1n]) {
+    const dynamicBuffer = new DynamicBuffer()
+    dynamicBuffer.writeUnsignedVarInt64(value)
+
+    deepStrictEqual(dynamicBuffer.readUnsignedVarInt64(0), [value, dynamicBuffer.length])
+  }
+
+  // A negative unsigned value is its two's complement and must not loop forever
+  const dynamicBuffer = new DynamicBuffer()
+  dynamicBuffer.writeUnsignedVarInt64(-1n)
+  deepStrictEqual(dynamicBuffer.readUnsignedVarInt64(0), [2n ** 64n - 1n, 10])
+})
