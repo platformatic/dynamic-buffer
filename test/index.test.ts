@@ -1479,3 +1479,141 @@ test('writeVarInt64', () => {
   dynamicBuffer5.writeVarInt64(-42n, false) // Prepend -42
   strictEqual(dynamicBuffer5.length > buffer5Length, true) // Length should have increased
 })
+
+test('positional reads are consistent in any order', () => {
+  const expected = Buffer.allocUnsafe(1000)
+  for (let i = 0; i < expected.length; i++) {
+    expected[i] = (i * 31 + 7) % 256
+  }
+
+  // Chunks of different sizes, including empty ones
+  const sizes = [1, 0, 7, 64, 3, 0, 250, 1, 128, 46, 500]
+  const chunks: Buffer[] = []
+  let position = 0
+  for (const size of sizes) {
+    chunks.push(expected.subarray(position, position + size))
+    position += size
+  }
+  strictEqual(position, expected.length)
+
+  const dynamicBuffer = new DynamicBuffer(chunks)
+
+  // Forward
+  for (let i = 0; i < expected.length; i++) {
+    strictEqual(dynamicBuffer.get(i), expected[i])
+  }
+
+  // Backward
+  for (let i = expected.length - 1; i >= 0; i--) {
+    strictEqual(dynamicBuffer.readUInt8(i), expected[i])
+  }
+
+  // Jumping around, with reads which span multiple chunks
+  for (let i = 0; i < 2000; i++) {
+    const offset = (i * 7919) % (expected.length - 8)
+    strictEqual(dynamicBuffer.readInt32BE(offset), expected.readInt32BE(offset))
+    strictEqual(dynamicBuffer.readBigUInt64LE(offset), expected.readBigUInt64LE(offset))
+
+    const end = Math.min(expected.length, offset + (i % 300))
+    deepStrictEqual(dynamicBuffer.slice(offset, end), expected.subarray(offset, end))
+    deepStrictEqual(dynamicBuffer.subarray(offset, end).buffer, expected.subarray(offset, end))
+  }
+})
+
+test('positional reads stay correct when the buffer changes between reads', () => {
+  let expected = Buffer.alloc(0)
+  const dynamicBuffer = new DynamicBuffer()
+  let seed = 42
+
+  function random (max: number): number {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff
+    return seed % max
+  }
+
+  function chunk (): Buffer {
+    const buffer = Buffer.allocUnsafe(random(40))
+    for (let i = 0; i < buffer.length; i++) {
+      buffer[i] = random(256)
+    }
+    return buffer
+  }
+
+  for (let i = 0; i < 5000; i++) {
+    const operation = random(10)
+
+    if (operation < 4) {
+      const buffer = chunk()
+      dynamicBuffer.append(buffer)
+      expected = Buffer.concat([expected, buffer])
+    } else if (operation === 4) {
+      const buffer = chunk()
+      dynamicBuffer.prepend(buffer)
+      expected = Buffer.concat([buffer, expected])
+    } else if (operation === 5) {
+      const other = new DynamicBuffer([chunk(), chunk()])
+      dynamicBuffer.prependFrom(other)
+      expected = Buffer.concat([other.buffer, expected])
+    } else if (operation === 6) {
+      const other = new DynamicBuffer([chunk(), chunk()])
+      dynamicBuffer.appendFrom(other)
+      expected = Buffer.concat([expected, other.buffer])
+    } else if (operation < 9) {
+      const offset = random(Math.min(expected.length, 60) + 1)
+      dynamicBuffer.consume(offset)
+      expected = expected.subarray(offset)
+    } else {
+      strictEqual(
+        dynamicBuffer.buffers.reduce((total, buffer) => total + buffer.length, 0),
+        expected.length
+      )
+    }
+
+    strictEqual(dynamicBuffer.length, expected.length)
+
+    // Leave the position cache somewhere in the buffer, then read somewhere else
+    for (let j = 0; j < 3 && expected.length > 0; j++) {
+      const offset = random(expected.length)
+      strictEqual(dynamicBuffer.get(offset), expected[offset])
+
+      if (offset + 4 <= expected.length) {
+        strictEqual(dynamicBuffer.readUInt32BE(offset), expected.readUInt32BE(offset))
+      }
+    }
+  }
+
+  deepStrictEqual(dynamicBuffer.buffer, expected)
+})
+
+test('sequential reads do not rescan the chunks', () => {
+  const chunkSize = 16
+  const chunksCount = 20000
+  const chunks: Buffer[] = []
+  for (let i = 0; i < chunksCount; i++) {
+    chunks.push(Buffer.alloc(chunkSize, i % 256))
+  }
+
+  // Count how many chunks are visited by wrapping the array which the buffer iterates on
+  let visited = 0
+  const dynamicBuffer = new DynamicBuffer(
+    chunks.map(chunk => {
+      return new Proxy(chunk, {
+        get (target, property) {
+          if (property === 'length') {
+            visited++
+          }
+
+          const value = Reflect.get(target, property)
+          return typeof value === 'function' ? value.bind(target) : value
+        }
+      })
+    })
+  )
+
+  visited = 0
+  for (let offset = 0; offset < dynamicBuffer.length; offset += 4) {
+    strictEqual(dynamicBuffer.readUInt8(offset), Math.floor(offset / chunkSize) % 256)
+  }
+
+  // A scan from the head on each read would visit about chunksCount ** 2 / 2 * 4 chunks (800M)
+  strictEqual(visited < dynamicBuffer.length * 4, true, `visited ${visited} chunks`)
+})
