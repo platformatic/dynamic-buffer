@@ -2,7 +2,8 @@ import { deepStrictEqual, notStrictEqual, strictEqual, throws } from 'node:asser
 import { Readable } from 'node:stream'
 import test from 'node:test'
 import { EMPTY_BUFFER } from '../src/definitions.ts'
-import { DynamicBuffer, DynamicBufferReadable, OutOfBoundsError } from '../src/index.ts'
+import { DynamicBuffer, OutOfBoundsError } from '../src/index.ts'
+import { asReadable, DynamicBufferReadable } from '../src/readable.ts'
 
 test('static isDynamicBuffer', () => {
   // Test with a DynamicBuffer instance
@@ -64,7 +65,7 @@ test('buffer', () => {
 
 test('asReadable', async () => {
   const emptyBuffer = new DynamicBuffer()
-  const emptyReadable = emptyBuffer.asReadable()
+  const emptyReadable = asReadable(emptyBuffer)
   const emptyChunks: Buffer[] = []
 
   strictEqual(emptyReadable instanceof DynamicBufferReadable, true)
@@ -80,7 +81,7 @@ test('asReadable', async () => {
   const singleBuffer = new DynamicBuffer(singleChunk)
   const singleChunks: Buffer[] = []
 
-  for await (const chunk of singleBuffer.asReadable()) {
+  for await (const chunk of asReadable(singleBuffer)) {
     singleChunks.push(chunk)
   }
 
@@ -91,7 +92,7 @@ test('asReadable', async () => {
   const multiBuffer = new DynamicBuffer([Buffer.from([1, 2]), Buffer.from([3, 4]), Buffer.from([5, 6])])
   const multiChunks: Buffer[] = []
 
-  for await (const chunk of multiBuffer.asReadable()) {
+  for await (const chunk of asReadable(multiBuffer)) {
     multiChunks.push(chunk)
   }
 
@@ -100,7 +101,7 @@ test('asReadable', async () => {
 
 test('asReadable snapshots the buffer list', async () => {
   const dynamicBuffer = new DynamicBuffer([Buffer.from([2]), Buffer.from([3])])
-  const readable = dynamicBuffer.asReadable()
+  const readable = asReadable(dynamicBuffer)
 
   dynamicBuffer.prepend(Buffer.from([1]))
   dynamicBuffer.append(Buffer.from([4]))
@@ -111,6 +112,40 @@ test('asReadable snapshots the buffer list', async () => {
   }
 
   deepStrictEqual(Buffer.concat(chunks), Buffer.from([2, 3]))
+})
+
+test('asReadable after consume streams the remaining logical view', async () => {
+  // After `consume`, the buffer exposes a head cursor. `asReadable` must stream
+  // the trimmed (remaining) chunks, not the consumed ones.
+  const db = new DynamicBuffer([Buffer.from([1, 2, 3]), Buffer.from([4, 5, 6])])
+  db.consume(3)
+
+  const chunks: Buffer[] = []
+  for await (const chunk of asReadable(db)) {
+    chunks.push(chunk)
+  }
+  deepStrictEqual(Buffer.concat(chunks), Buffer.from([4, 5, 6]))
+})
+
+test('asReadable after partial consume across a chunk boundary', async () => {
+  const db = new DynamicBuffer([Buffer.from([1, 2, 3]), Buffer.from([4, 5, 6])])
+  db.consume(4) // drops 1,2,3 and the first byte of the second chunk
+
+  const chunks: Buffer[] = []
+  for await (const chunk of asReadable(db)) {
+    chunks.push(chunk)
+  }
+  deepStrictEqual(Buffer.concat(chunks), Buffer.from([5, 6]))
+})
+
+test('root entry does not pull in the readable stream', async () => {
+  // The stream helper imports `node:stream`, so it must not be reachable from
+  // the main entry (it would break browser bundling). It is only exported from
+  // the `@platformatic/dynamic-buffer/readable` subpath.
+  const root = await import('../src/index.ts')
+  strictEqual(root.asReadable, undefined)
+  strictEqual(root.DynamicBufferReadable, undefined)
+  strictEqual(root.DynamicBuffer, DynamicBuffer)
 })
 
 test('append', () => {

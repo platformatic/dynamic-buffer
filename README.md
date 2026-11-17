@@ -40,8 +40,24 @@ console.log(db.buffer) // <Buffer 01 02 03 04 05 06 07 08>
 ### Exports
 
 - `DynamicBuffer`
-- `DynamicBufferReadable`
 - `OutOfBoundsError`
+
+The `DynamicBufferReadable` stream class and its `asReadable()` helper are
+available from the `@platformatic/dynamic-buffer/readable` subpath, so the
+main entry does not pull in a stream implementation and stays browser-bundleable:
+
+```js
+import { asReadable, DynamicBufferReadable } from '@platformatic/dynamic-buffer/readable'
+```
+
+### Buffer in the browser
+
+The package imports `Buffer` from the `buffer` module and ships it as a runtime
+dependency, so the main entry is self-sufficient in the browser:
+
+- In Node.js, the `buffer` module resolves to the built-in, so nothing changes.
+- In a bundler, `buffer` is resolved from `node_modules` and bundled, so the
+  main entry works without a global `Buffer` being defined by the consumer.
 
 ### Constructor
 
@@ -103,7 +119,14 @@ Appends chunks from another `DynamicBuffer`. Returns `this`.
 
 Prepends chunks from another `DynamicBuffer`. Returns `this`.
 
-#### `asReadable()`
+#### `asReadable() -> DynamicBufferReadable`
+
+**Export: `@platformatic/dynamic-buffer/readable`**
+
+```js
+import { asReadable } from '@platformatic/dynamic-buffer/readable'
+const stream = asReadable(db)
+```
 
 Returns a `DynamicBufferReadable` stream over the current chunks.
 
