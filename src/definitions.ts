@@ -1,3 +1,5 @@
+import { Buffer } from 'buffer'
+
 export const INT8_SIZE = 1
 export const INT16_SIZE = 2
 export const INT32_SIZE = 4

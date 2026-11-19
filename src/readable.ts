@@ -1,4 +1,6 @@
-import { Readable } from 'node:stream'
+// Bare `stream` (not `node:stream`) so browser bundlers can resolve/polyfill it.
+import { Readable } from 'stream'
+import type { DynamicBuffer } from './index.ts'
 
 export class DynamicBufferReadable extends Readable {
   #buffers: Buffer[]
@@ -20,4 +22,10 @@ export class DynamicBufferReadable extends Readable {
 
     this.push(null)
   }
+}
+
+// Stream a DynamicBuffer without pulling `node:stream` into the main entry.
+// Import from the `@platformatic/dynamic-buffer/readable` subpath.
+export function asReadable (buffer: DynamicBuffer): DynamicBufferReadable {
+  return new DynamicBufferReadable(buffer.buffers)
 }
